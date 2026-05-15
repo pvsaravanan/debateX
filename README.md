@@ -41,37 +41,9 @@ The result: **higher-quality, bias-reduced answers** for mission-critical tasks 
 
 ## How It Works: Three-Stage Deliberation
 
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────────────────────────┐
-│  Stage 1 — Independent Generation (Parallel)            │
-│  Each council member generates response without          │
-│  seeing others' work. Full cognitive independence.       │
-│  Models: GPT-4o · Gemini Pro · Claude Sonnet · Grok     │
-└─────────────────────┬─────────────────────────────────┘
-                      │ (anonymized: "Response A/B/C")
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Stage 2 — Peer Evaluation (Parallel)                   │
-│  Each model reviews all responses using anonymous        │
-│  labels. Rankings prevent bias toward known vendors.     │
-│  Output: Scored evaluations + ranked preference list     │
-└─────────────────────┬─────────────────────────────────┘
-                      │ (aggregate rankings computed)
-                      ▼
-┌─────────────────────────────────────────────────────────┐
-│  Stage 3 — Chairman Synthesis (Single)                  │
-│  Moderator LLM receives Stage 1 responses +             │
-│  Stage 2 rankings + aggregate scores. Produces          │
-│  coherent final answer incorporating strongest logic.   │
-└─────────────────────────────────────────────────────────┘
-                      │
-                      ▼
-              Final Answer + Metadata
-         (with full audit trail visible to user)
-```
+![Three-Stage Deliberation Pipeline](./public/images/pipeline.png)
+
+**Key Insight:** Stage 1 & 2 run in parallel. Anonymization in Stage 2 prevents bias toward well-known vendors. Stage 3 brings coherence using statistical consensus.
 
 ## Architecture
 
@@ -116,6 +88,14 @@ debateX is built for **developer extensibility and operational clarity**. Here's
 
 5. **Full Transparency by Default**  
    All raw outputs inspectable via web UI. Parsed rankings shown next to raw text. Users validate system interpretation. Builds trust.
+
+---
+
+## System Architecture
+
+![System Architecture](./public/images/system_arch.png)
+
+**Data Flow:** User query via React UI → FastAPI routes → Orchestration layer runs 3 stages in parallel → OpenRouter handles all LLM calls → Results persisted & returned to frontend with full audit trail.
 
 ---
 
