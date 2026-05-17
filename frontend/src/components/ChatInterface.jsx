@@ -5,6 +5,35 @@ import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import './ChatInterface.css';
 
+const BattleIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+    <path d="m13 19 6 3 3-6-3-6-6 3" />
+    <path d="M8 16 3 21" />
+    <path d="m18 8 3-3" />
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
+const ClockIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m5 12 7-7 7 7" />
+    <path d="M12 19V5" />
+  </svg>
+);
+
 export default function ChatInterface({
   conversation,
   onSendMessage,
@@ -30,116 +59,103 @@ export default function ChatInterface({
   };
 
   const handleKeyDown = (e) => {
-    // Submit on Enter (without Shift)
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
     }
   };
 
-  if (!conversation) {
-    return (
-      <div className="chat-interface">
-        <div className="empty-state">
-          <h2>Welcome to DebateX</h2>
-          <p>Create a new conversation to get started</p>
-        </div>
-      </div>
-    );
-  }
+  const isInitialState = !conversation || conversation.messages.length === 0;
 
   return (
     <div className="chat-interface">
-      <div className="messages-container">
-        {conversation.messages.length === 0 ? (
-          <div className="empty-state">
-            <h2>Start a conversation</h2>
-            <p>Ask a question to consult the DebateX</p>
+      <div className={`main-content ${isInitialState ? 'centered' : ''}`}>
+        {isInitialState ? (
+          <div className="hero-section">
+            <h2 className="logo-text">debateX</h2>
+            <h1 className="hero-headline">
+              Experience the <span className="highlight">frontier</span>
+            </h1>
           </div>
         ) : (
-          conversation.messages.map((msg, index) => (
-            <div key={index} className="message-group">
-              {msg.role === 'user' ? (
-                <div className="user-message">
-                  <div className="message-label">You</div>
-                  <div className="message-content">
-                    <div className="markdown-content">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+          <div className="messages-container">
+            {conversation.messages.map((msg, index) => (
+              <div key={index} className={`message-group ${msg.role}`}>
+                <div className="message-content">
+                  {msg.role === 'user' ? (
+                    <div className="user-bubble">{msg.content}</div>
+                  ) : (
+                    <div className="assistant-stages">
+                      {msg.loading?.stage1 && <div className="loading-stage">Gathering consensus...</div>}
+                      {msg.stage1 && <Stage1 responses={msg.stage1} />}
+                      {msg.stage2 && (
+                        <Stage2
+                          rankings={msg.stage2}
+                          labelToModel={msg.metadata?.label_to_model}
+                          aggregateRankings={msg.metadata?.aggregate_rankings}
+                        />
+                      )}
+                      {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+                      
+                      {msg.error && (
+                        <div className="error-panel">
+                          <div className="error-header">
+                            <span className="error-badge">LIMIT EXCEEDED</span>
+                            <span className="error-code">OpenRouter 429</span>
+                          </div>
+                          <p className="error-text">{msg.error}</p>
+                          {msg.error.includes("free-models-per-day") && (
+                            <div className="error-action-box">
+                              <span className="action-title">How to Resolve:</span>
+                              <ol className="action-list">
+                                <li>Add <strong>$10 in credits</strong> to your OpenRouter account to unlock 1,000 requests/day.</li>
+                                <li>Configure a paid API key with credits in your <code>.env</code> file.</li>
+                                <li>Wait for the daily limit to reset at midnight UTC.</li>
+                              </ol>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
-              ) : (
-                <div className="assistant-message">
-                  <div className="message-label">DebateX</div>
-
-                  {/* Stage 1 */}
-                  {msg.loading?.stage1 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 1: Collecting individual responses...</span>
-                    </div>
-                  )}
-                  {msg.stage1 && <Stage1 responses={msg.stage1} />}
-
-                  {/* Stage 2 */}
-                  {msg.loading?.stage2 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
-                    </div>
-                  )}
-                  {msg.stage2 && (
-                    <Stage2
-                      rankings={msg.stage2}
-                      labelToModel={msg.metadata?.label_to_model}
-                      aggregateRankings={msg.metadata?.aggregate_rankings}
-                    />
-                  )}
-
-                  {/* Stage 3 */}
-                  {msg.loading?.stage3 && (
-                    <div className="stage-loading">
-                      <div className="spinner"></div>
-                      <span>Running Stage 3: Final synthesis...</span>
-                    </div>
-                  )}
-                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-
-        {isLoading && (
-          <div className="loading-indicator">
-            <div className="spinner"></div>
-            <span>Consulting the debate...</span>
+              </div>
+            ))}
+            {isLoading && <div className="loading-global">Thinking...</div>}
+            <div ref={messagesEndRef} />
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        <div className="input-container">
+          <form className="input-box" onSubmit={handleSubmit}>
+            <textarea
+              className="message-input"
+              placeholder="How can I help you today?"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isLoading}
+              rows={1}
+            />
+            <div className="input-footer">
+              <div className="input-actions">
+                <button type="button" className="action-btn"><PlusIcon /></button>
+                <button type="button" className="action-btn"><ClockIcon /></button>
+              </div>
+              <button 
+                type="submit" 
+                className={`send-btn ${input.trim() ? 'active' : ''}`}
+                disabled={!input.trim() || isLoading}
+              >
+                <SendIcon />
+              </button>
+            </div>
+          </form>
+          <p className="disclaimer">
+            AI can make mistakes. Please check important information.
+          </p>
+        </div>
       </div>
-
-      {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
-          <textarea
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={3}
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={!input.trim() || isLoading}
-          >
-            Send
-          </button>
-        </form>
-      )}
     </div>
   );
 }
