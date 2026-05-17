@@ -10,10 +10,10 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # debate members - list of OpenRouter model identifiers
 debate_MODELS = [
-    "inclusionai/ring-2.6-1t:free",
     "deepseek/deepseek-v4-flash:free",
-    "google/gemma-4-26b-a4b-it:free",
     "z-ai/glm-4.5-air:free",
+    "liquid/lfm-2.5-1.2b-instruct:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
 ]
 
 # moderator model - synthesizes final response

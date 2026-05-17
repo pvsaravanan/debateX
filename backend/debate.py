@@ -162,10 +162,22 @@ Provide a clear, well-reasoned final answer that represents the debate's collect
     response = await query_model(moderator_MODEL, messages)
 
     if response is None:
-        # Fallback if moderator fails
+        # Fallback if moderator fails - try alternative model if available
+        print(f"Moderator model {moderator_MODEL} failed. Attempting fallback synthesis...")
+        
+        # Try to get a simple synthesis from first available debate model
+        for model in debate_MODELS:
+            fallback_response = await query_model(model, messages)
+            if fallback_response is not None:
+                return {
+                    "model": model,
+                    "response": fallback_response.get('content', 'Unable to generate synthesis')
+                }
+        
+        # Final fallback
         return {
             "model": moderator_MODEL,
-            "response": "Error: Unable to generate final synthesis."
+            "response": "Error: Unable to generate final synthesis. Please try again."
         }
 
     return {
@@ -274,8 +286,11 @@ Title:"""
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    # Use gemini-2.5-flash for title generation (fast and cheap)
-    response = await query_model("google/gemini-2.5-flash", messages, timeout=30.0)
+    try:
+        # Use nvidia/nemotron-3-nano-30b-a3b:free for title generation (extremely fast and free)
+        response = await query_model("nvidia/nemotron-3-nano-30b-a3b:free", messages, timeout=30.0)
+    except Exception:
+        response = None
 
     if response is None:
         # Fallback to a generic title
