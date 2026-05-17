@@ -48,9 +48,22 @@ async def query_model(
                 'reasoning_details': message.get('reasoning_details')
             }
 
+    except httpx.HTTPStatusError as e:
+        error_msg = f"HTTP Error {e.response.status_code}"
+        try:
+            err_json = e.response.json()
+            if 'error' in err_json and 'message' in err_json['error']:
+                error_msg = err_json['error']['message']
+        except Exception:
+            pass
+        
+        print(f"HTTP Error querying model {model}: {e.response.status_code} - {error_msg}")
+        raise ValueError(error_msg)
     except Exception as e:
+        import traceback
         print(f"Error querying model {model}: {e}")
-        return None
+        traceback.print_exc()
+        raise e
 
 
 async def query_models_parallel(
@@ -73,7 +86,22 @@ async def query_models_parallel(
     tasks = [query_model(model, messages) for model in models]
 
     # Wait for all to complete
-    responses = await asyncio.gather(*tasks)
+    responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Map models to their responses
-    return {model: response for model, response in zip(models, responses)}
+    # Check if any exception is a rate limit or credit error, and propagate it immediately
+    for resp in responses:
+        if isinstance(resp, Exception):
+            err_str = str(resp)
+            if "Rate limit" in err_str or "credits" in err_str or "429" in err_str or "402" in err_str:
+                raise resp
+
+    # Map models to their responses (converting other exceptions to None)
+    mapped_responses = {}
+    for model, resp in zip(models, responses):
+        if isinstance(resp, Exception):
+            print(f"Model {model} failed with exception: {resp}")
+            mapped_responses[model] = None
+        else:
+            mapped_responses[model] = resp
+
+    return mapped_responses
