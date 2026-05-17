@@ -1,0 +1,479 @@
+{
+  "metadata": {
+    "projectName": "DebateX",
+    "projectDescription": "A multi-LLM collaborative answer system with anonymized peer review. Users ask questions, multiple LLMs provide individual responses, then anonymously rank each other's work, and a moderator synthesizes the final answer.",
+    "version": "0.1.0",
+    "languages": ["python", "javascript", "jsx", "css", "html", "json", "shell"],
+    "frameworks": ["FastAPI", "React", "Vite"],
+    "gitCommit": "92e1fccb1bdcf1bab7221aa9ed90f9dc72529131",
+    "analysisDate": "2026-05-14"
+  },
+  "nodes": [
+    {
+      "id": "backend:main",
+      "type": "module",
+      "name": "backend.main",
+      "filePath": "backend/main.py",
+      "language": "python",
+      "description": "FastAPI application entry point. Defines REST API endpoints for conversation management and message handling.",
+      "complexity": "moderate"
+    },
+    {
+      "id": "backend:config",
+      "type": "config",
+      "name": "backend.config",
+      "filePath": "backend/config.py",
+      "language": "python",
+      "description": "Configuration module containing debate model list, moderator model, API credentials, and data paths.",
+      "complexity": "simple"
+    },
+    {
+      "id": "backend:debate",
+      "type": "module",
+      "name": "backend.debate",
+      "filePath": "backend/debate.py",
+      "language": "python",
+      "description": "Core 3-stage debate orchestration logic. Implements stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final.",
+      "complexity": "complex"
+    },
+    {
+      "id": "backend:openrouter",
+      "type": "module",
+      "name": "backend.openrouter",
+      "filePath": "backend/openrouter.py",
+      "language": "python",
+      "description": "OpenRouter API client for making LLM requests. Handles async queries with parallel execution support.",
+      "complexity": "moderate"
+    },
+    {
+      "id": "backend:storage",
+      "type": "module",
+      "name": "backend.storage",
+      "filePath": "backend/storage.py",
+      "language": "python",
+      "description": "JSON-based conversation storage layer. Manages file I/O for persisting conversations.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:App",
+      "type": "component",
+      "name": "App",
+      "filePath": "frontend/src/App.jsx",
+      "language": "jsx",
+      "description": "Main React application component. Manages conversation state, loads conversations from backend.",
+      "complexity": "moderate"
+    },
+    {
+      "id": "frontend:ChatInterface",
+      "type": "component",
+      "name": "ChatInterface",
+      "filePath": "frontend/src/components/ChatInterface.jsx",
+      "language": "jsx",
+      "description": "Main chat UI component. Renders conversation messages, stage visualizations, and message input.",
+      "complexity": "complex"
+    },
+    {
+      "id": "frontend:Stage1",
+      "type": "component",
+      "name": "Stage1",
+      "filePath": "frontend/src/components/Stage1.jsx",
+      "language": "jsx",
+      "description": "Displays individual model responses in tabbed interface from Stage 1.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:Stage2",
+      "type": "component",
+      "name": "Stage2",
+      "filePath": "frontend/src/components/Stage2.jsx",
+      "language": "jsx",
+      "description": "Displays peer evaluations and rankings from Stage 2. Shows de-anonymized model names client-side.",
+      "complexity": "complex"
+    },
+    {
+      "id": "frontend:Stage3",
+      "type": "component",
+      "name": "Stage3",
+      "filePath": "frontend/src/components/Stage3.jsx",
+      "language": "jsx",
+      "description": "Displays final synthesized answer from moderator. Green background highlights conclusion.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:Sidebar",
+      "type": "component",
+      "name": "Sidebar",
+      "filePath": "frontend/src/components/Sidebar.jsx",
+      "language": "jsx",
+      "description": "Navigation sidebar displaying conversation history with create/select/delete functionality.",
+      "complexity": "moderate"
+    },
+    {
+      "id": "frontend:api",
+      "type": "module",
+      "name": "api",
+      "filePath": "frontend/src/api.js",
+      "language": "javascript",
+      "description": "API client for backend communication. Provides methods for conversation and message management.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:App.css",
+      "type": "style",
+      "name": "App.css",
+      "filePath": "frontend/src/App.css",
+      "language": "css",
+      "description": "Application-level styles for layout and typography.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:index.css",
+      "type": "style",
+      "name": "index.css",
+      "filePath": "frontend/src/index.css",
+      "language": "css",
+      "description": "Global styles including markdown-content class for consistent spacing.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:ChatInterface.css",
+      "type": "style",
+      "name": "ChatInterface.css",
+      "filePath": "frontend/src/components/ChatInterface.css",
+      "language": "css",
+      "description": "Chat interface styling for message layout and input area.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:Stage1.css",
+      "type": "style",
+      "name": "Stage1.css",
+      "filePath": "frontend/src/components/Stage1.css",
+      "language": "css",
+      "description": "Styling for Stage 1 tabbed interface.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:Stage2.css",
+      "type": "style",
+      "name": "Stage2.css",
+      "filePath": "frontend/src/components/Stage2.css",
+      "language": "css",
+      "description": "Styling for Stage 2 rankings display with aggregate rankings visualization.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:styles:Stage3.css",
+      "type": "style",
+      "name": "Stage3.css",
+      "filePath": "frontend/src/components/Stage3.css",
+      "language": "css",
+      "description": "Green-tinted styling for final answer stage.",
+      "complexity": "simple"
+    },
+    {
+      "id": "frontend:vite.config",
+      "type": "config",
+      "name": "vite.config.js",
+      "filePath": "frontend/vite.config.js",
+      "language": "javascript",
+      "description": "Vite build configuration with React plugin.",
+      "complexity": "simple"
+    },
+    {
+      "id": "external:OpenRouter",
+      "type": "external",
+      "name": "OpenRouter API",
+      "description": "Third-party API for accessing multiple LLM providers (OpenAI, Google, Anthropic, etc.)",
+      "complexity": "simple"
+    },
+    {
+      "id": "external:httpx",
+      "type": "external",
+      "name": "httpx",
+      "description": "Python async HTTP client library for making API requests.",
+      "complexity": "simple"
+    },
+    {
+      "id": "storage:conversations",
+      "type": "data",
+      "name": "Conversations Data",
+      "filePath": "data/conversations/",
+      "description": "JSON file storage for conversation history and messages.",
+      "complexity": "simple"
+    },
+    {
+      "id": "documentation:README",
+      "type": "documentation",
+      "name": "README.md",
+      "filePath": "README.md",
+      "description": "Project overview, setup instructions, and tech stack documentation.",
+      "complexity": "simple"
+    },
+    {
+      "id": "documentation:CLAUDE",
+      "type": "documentation",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "description": "Technical architecture notes and implementation details for developers.",
+      "complexity": "moderate"
+    }
+  ],
+  "edges": [
+    {
+      "source": "backend:main",
+      "target": "backend:debate",
+      "type": "imports",
+      "description": "Main imports core debate orchestration functions"
+    },
+    {
+      "source": "backend:main",
+      "target": "backend:storage",
+      "type": "imports",
+      "description": "Main imports storage functions for conversation persistence"
+    },
+    {
+      "source": "backend:main",
+      "target": "backend:config",
+      "type": "imports",
+      "description": "Main reads configuration settings"
+    },
+    {
+      "source": "backend:debate",
+      "target": "backend:openrouter",
+      "type": "imports",
+      "description": "Debate module uses OpenRouter client for LLM queries"
+    },
+    {
+      "source": "backend:debate",
+      "target": "backend:config",
+      "type": "imports",
+      "description": "Debate module reads debate models and moderator configuration"
+    },
+    {
+      "source": "backend:openrouter",
+      "target": "external:OpenRouter",
+      "type": "api_call",
+      "description": "OpenRouter client makes HTTP requests to OpenRouter API"
+    },
+    {
+      "source": "backend:openrouter",
+      "target": "external:httpx",
+      "type": "imports",
+      "description": "Uses httpx async HTTP client library"
+    },
+    {
+      "source": "backend:config",
+      "target": "storage:conversations",
+      "type": "references",
+      "description": "Config specifies data directory path"
+    },
+    {
+      "source": "backend:storage",
+      "target": "storage:conversations",
+      "type": "writes",
+      "description": "Storage module persists conversations to JSON files"
+    },
+    {
+      "source": "frontend:App",
+      "target": "frontend:api",
+      "type": "imports",
+      "description": "App uses API client for backend communication"
+    },
+    {
+      "source": "frontend:App",
+      "target": "frontend:Sidebar",
+      "type": "imports",
+      "description": "App renders Sidebar component"
+    },
+    {
+      "source": "frontend:App",
+      "target": "frontend:ChatInterface",
+      "type": "imports",
+      "description": "App renders ChatInterface component"
+    },
+    {
+      "source": "frontend:ChatInterface",
+      "target": "frontend:Stage1",
+      "type": "imports",
+      "description": "ChatInterface renders Stage1 component conditionally"
+    },
+    {
+      "source": "frontend:ChatInterface",
+      "target": "frontend:Stage2",
+      "type": "imports",
+      "description": "ChatInterface renders Stage2 component conditionally"
+    },
+    {
+      "source": "frontend:ChatInterface",
+      "target": "frontend:Stage3",
+      "type": "imports",
+      "description": "ChatInterface renders Stage3 component conditionally"
+    },
+    {
+      "source": "frontend:ChatInterface",
+      "target": "frontend:api",
+      "type": "imports",
+      "description": "ChatInterface uses API to send messages"
+    },
+    {
+      "source": "frontend:Stage2",
+      "target": "frontend:api",
+      "type": "references",
+      "description": "Stage2 receives metadata from API response for de-anonymization"
+    },
+    {
+      "source": "frontend:App",
+      "target": "frontend:styles:App.css",
+      "type": "styles",
+      "description": "App component uses stylesheet"
+    },
+    {
+      "source": "frontend:ChatInterface",
+      "target": "frontend:styles:ChatInterface.css",
+      "type": "styles",
+      "description": "ChatInterface component uses stylesheet"
+    },
+    {
+      "source": "frontend:Stage1",
+      "target": "frontend:styles:Stage1.css",
+      "type": "styles",
+      "description": "Stage1 component uses stylesheet"
+    },
+    {
+      "source": "frontend:Stage2",
+      "target": "frontend:styles:Stage2.css",
+      "type": "styles",
+      "description": "Stage2 component uses stylesheet"
+    },
+    {
+      "source": "frontend:Stage3",
+      "target": "frontend:styles:Stage3.css",
+      "type": "styles",
+      "description": "Stage3 component uses stylesheet"
+    },
+    {
+      "source": "frontend:api",
+      "target": "backend:main",
+      "type": "http_request",
+      "description": "Frontend API client makes HTTP requests to backend REST API"
+    },
+    {
+      "source": "backend:main",
+      "target": "backend:storage",
+      "type": "reads_writes",
+      "description": "Main endpoint handlers read/write through storage module"
+    }
+  ],
+  "dataFlow": {
+    "stageOne": {
+      "description": "User query sent to all debate models in parallel",
+      "source": "frontend:ChatInterface",
+      "target": "backend:debate",
+      "steps": [
+        "User submits question in frontend",
+        "frontend:api sends message to backend",
+        "backend:debate.stage1_collect_responses called",
+        "backend:openrouter.query_models_parallel queries all models",
+        "Individual responses collected and formatted"
+      ]
+    },
+    "stageTwo": {
+      "description": "Each model anonymously ranks other responses",
+      "source": "backend:debate",
+      "target": "frontend:Stage2",
+      "steps": [
+        "Stage 1 responses anonymized as Response A, B, C, etc.",
+        "Label-to-model mapping created (not sent to models)",
+        "backend:openrouter.query_models_parallel requests rankings",
+        "Parsing extracts FINAL RANKING from each evaluation",
+        "Aggregate rankings computed from all peer evaluations",
+        "Results sent to frontend with metadata"
+      ]
+    },
+    "stageThree": {
+      "description": "Moderator synthesizes final answer",
+      "source": "backend:debate",
+      "target": "frontend:Stage3",
+      "steps": [
+        "Moderator model receives all responses and rankings",
+        "backend:openrouter.query_model calls moderator",
+        "Final synthesized answer returned to frontend",
+        "Green-tinted Stage 3 component displays result"
+      ]
+    },
+    "persistence": {
+      "description": "Conversation storage",
+      "steps": [
+        "Each user message stored with metadata",
+        "Stage results (stage1, stage2, stage3) stored per message",
+        "Metadata (label_to_model, aggregate_rankings) ephemeral - not persisted",
+        "backend:storage manages file I/O to data/conversations/"
+      ]
+    }
+  },
+  "architecture": {
+    "pattern": "Three-stage collaborative LLM system",
+    "tiers": [
+      {
+        "name": "Frontend Tier",
+        "technology": "React + Vite",
+        "components": [
+          "App (main orchestrator)",
+          "ChatInterface (message display/input)",
+          "Stage1, Stage2, Stage3 (result visualization)",
+          "Sidebar (conversation history)",
+          "api (backend communication)"
+        ]
+      },
+      {
+        "name": "Backend Tier",
+        "technology": "FastAPI (Python)",
+        "components": [
+          "main.py (REST API endpoints)",
+          "debate.py (orchestration logic)",
+          "openrouter.py (LLM API client)",
+          "config.py (settings)",
+          "storage.py (persistence)"
+        ]
+      },
+      {
+        "name": "External Services",
+        "technology": "OpenRouter API",
+        "description": "Unified interface to multiple LLM providers"
+      },
+      {
+        "name": "Storage Tier",
+        "technology": "JSON files",
+        "location": "data/conversations/",
+        "description": "Persistent conversation history"
+      }
+    ]
+  },
+  "keyFeatures": [
+    {
+      "name": "Multi-Model Collaboration",
+      "description": "Query multiple LLMs simultaneously for diverse perspectives"
+    },
+    {
+      "name": "Anonymized Peer Review",
+      "description": "Models rank each other without knowing model identities to prevent bias"
+    },
+    {
+      "name": "Transparent Evaluation",
+      "description": "Users can inspect all intermediate results (Stage 1, 2, 3) in tabbed interface"
+    },
+    {
+      "name": "Client-Side De-anonymization",
+      "description": "Model names revealed to users only after evaluation for transparency"
+    },
+    {
+      "name": "Graceful Degradation",
+      "description": "System continues with successful responses if some models fail"
+    },
+    {
+      "name": "Conversation History",
+      "description": "JSON-based storage of all conversations with full metadata"
+    }
+  ]
+}

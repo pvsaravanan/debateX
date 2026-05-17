@@ -1,7 +1,7 @@
 """3-stage DebateX orchestration."""
 
 from typing import List, Dict, Any, Tuple
-from .openrouter import query_models_parallel, query_model
+from .llm import query_models_parallel, query_model
 from .config import debate_MODELS, moderator_MODEL
 
 

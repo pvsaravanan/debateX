@@ -1,0 +1,54 @@
+# .understandignore — patterns for files/dirs to exclude from analysis
+# Syntax: same as .gitignore (globs, # comments, ! negation, trailing / for dirs)
+#
+# Built-in defaults (always excluded unless negated):
+#   node_modules/, .git/, dist/, build/, obj/, *.lock, *.min.js, etc.
+
+# --- Frontend and Build Artifacts ---
+node_modules/
+dist/
+build/
+.next/
+.cache/
+out/
+
+# --- Python and Backend ---
+__pycache__/
+.venv/
+venv/
+*.pyc
+*.egg-info/
+
+# --- Environment and Secrets ---
+.env
+.env.local
+.env.*.local
+
+# --- IDE and Editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Lock files ---
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+uv.lock
+
+# --- Binary files ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.pdf
+*.zip
+
+# --- Generated ---
+*.min.js
+*.min.css
+*.map
