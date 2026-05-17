@@ -1,25 +1,11 @@
 .stage3 {
-  background: #f0fff0;
-  border-color: #c8e6c8;
+  background-color: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  padding: 24px;
+  border-radius: 12px;
+  margin-top: 32px;
 }
 
-.final-response {
-  background: #ffffff;
-  padding: 20px;
-  border-radius: 6px;
-  border: 1px solid #c8e6c8;
-}
-
-.moderator-label {
-  color: #2d8a2d;
-  font-size: 12px;
-  font-family: monospace;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-
-.final-text {
-  color: #333;
-  line-height: 1.7;
-  font-size: 15px;
+.stage3 .stage-title {
+  color: var(--accent-cyan);
 }
