@@ -171,12 +171,10 @@ OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxxxxxxxxxxxxx
 
 ```bash
 # Install Python dependencies
-pip install uv  # First time only
-cd backend
-
-# Run with auto-reload (development)
 uv sync
-uv run uvicorn main:app --reload --port 8001
+
+# Run the backend as a module from the root
+uv run python -m backend.main
 ```
 
 **Backend is ready when you see:**
@@ -210,6 +208,24 @@ VITE v5.x.x  ready in xxx ms
 2. Type a complex question in the chat
 3. Watch as debateX runs all 3 stages in ~8-15 seconds
 4. Inspect individual responses, peer reviews, and final synthesis in tabs
+
+---
+
+## ⚡ One-Command Start (Recommended)
+
+### Windows
+Double-click `run.bat` in the root directory. This will:
+1. Sync backend dependencies (`uv sync`)
+2. Start the FastAPI backend on port 8001
+3. Install frontend dependencies (`npm install`)
+4. Start the Vite frontend on port 5173
+
+### macOS / Linux
+Run the start script from the root:
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 ### Optional: Docker (Single Command)
 
