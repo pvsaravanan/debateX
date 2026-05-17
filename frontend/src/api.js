@@ -112,4 +112,46 @@ export const api = {
       }
     }
   },
+
+  /**
+   * Delete a conversation.
+   */
+  async deleteConversation(conversationId) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail || `Failed to delete conversation (${response.status})`
+      );
+    }
+    return response.json();
+  },
+
+  /**
+   * Update a conversation (e.g. rename it).
+   */
+  async updateConversation(conversationId, data) {
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      }
+    );
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail || `Failed to update conversation (${response.status})`
+      );
+    }
+    return response.json();
+  },
 };

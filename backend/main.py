@@ -14,13 +14,14 @@ from .debate import run_full_debate, generate_conversation_title, stage1_collect
 
 app = FastAPI(title="DebateX API")
 
-# Enable CORS for local development
+# Enable CORS for local development - MUST be added before other middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -32,6 +33,11 @@ class CreateConversationRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
+
+
+class UpdateConversationRequest(BaseModel):
+    """Request to update/rename a conversation."""
+    title: str
 
 
 class ConversationMetadata(BaseModel):
@@ -77,6 +83,33 @@ async def get_conversation(conversation_id: str):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
+
+@app.put("/api/conversations/{conversation_id}")
+async def update_conversation(conversation_id: str, request: UpdateConversationRequest):
+    """Update a specific conversation's properties (like title)."""
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    try:
+        storage.update_conversation_title(conversation_id, request.title)
+        return {"success": True, "title": request.title}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating conversation title: {str(e)}")
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a specific conversation."""
+    try:
+        success = storage.delete_conversation(conversation_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return {"success": True, "message": "Conversation deleted"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error deleting conversation: {str(e)}")
 
 
 @app.post("/api/conversations/{conversation_id}/message")
