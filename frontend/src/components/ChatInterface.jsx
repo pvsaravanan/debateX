@@ -125,36 +125,36 @@ export default function ChatInterface({
             <div ref={messagesEndRef} />
           </div>
         )}
+      </div>
 
-        <div className="input-container">
-          <form className="input-box" onSubmit={handleSubmit}>
-            <textarea
-              className="message-input"
-              placeholder="How can I help you today?"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isLoading}
-              rows={1}
-            />
-            <div className="input-footer">
-              <div className="input-actions">
-                <button type="button" className="action-btn"><PlusIcon /></button>
-                <button type="button" className="action-btn"><ClockIcon /></button>
-              </div>
-              <button 
-                type="submit" 
-                className={`send-btn ${input.trim() ? 'active' : ''}`}
-                disabled={!input.trim() || isLoading}
-              >
-                <SendIcon />
-              </button>
+      <div className="input-container">
+        <form className="input-box" onSubmit={handleSubmit}>
+          <textarea
+            className="message-input"
+            placeholder="How can I help you today?"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={isLoading}
+            rows={1}
+          />
+          <div className="input-footer">
+            <div className="input-actions">
+              <button type="button" className="action-btn"><PlusIcon /></button>
+              <button type="button" className="action-btn"><ClockIcon /></button>
             </div>
-          </form>
-          <p className="disclaimer">
-            AI can make mistakes. Please check important information.
-          </p>
-        </div>
+            <button 
+              type="submit" 
+              className={`send-btn ${input.trim() ? 'active' : ''}`}
+              disabled={!input.trim() || isLoading}
+            >
+              <SendIcon />
+            </button>
+          </div>
+        </form>
+        <p className="disclaimer">
+          AI can make mistakes. Please check important information.
+        </p>
       </div>
     </div>
   );

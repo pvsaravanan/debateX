@@ -13,13 +13,13 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  padding-bottom: 120px; /* Space for input box */
+  padding-bottom: 24px;
 }
 
 .main-content.centered {
   justify-content: center;
   align-items: center;
-  padding-bottom: 180px;
+  padding-bottom: 0;
 }
 
 .hero-section {
@@ -58,17 +58,14 @@
   max-width: 800px;
   width: 100%;
   margin: 0 auto;
-  padding: 40px 24px;
+  padding: 40px 24px 0 24px; /* bottom padding removed as main-content handles it */
 }
 
 .input-container {
-  position: absolute;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
   width: 100%;
   max-width: 800px;
-  padding: 0 24px;
+  margin: 0 auto;
+  padding: 16px 24px 24px 24px;
 }
 
 .input-box {
