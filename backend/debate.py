@@ -79,6 +79,8 @@ IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
 - Do not add any other text or explanations in the ranking section
 
+CRITICAL LANGUAGE REQUIREMENT: You MUST write all your comments and evaluations in the same language as the user's original question (e.g., if the question is in Tamil, write in Tamil; if Spanish, write in Spanish; if French, write in French, etc.). The "FINAL RANKING:" header and label format (e.g., "Response A") must remain in English.
+
 Example of the correct format for your ENTIRE response:
 
 Response A provides good detail on X but misses Y...
@@ -153,6 +155,8 @@ Your task as moderator is to synthesize all of this information into a single, c
 - The individual responses and their insights
 - The peer rankings and what they reveal about response quality
 - Any patterns of agreement or disagreement
+
+CRITICAL LANGUAGE REQUIREMENT: You MUST write your final response in the same language as the user's original question (e.g., if the question is in Tamil, Hindi, Spanish, French, German, Japanese, etc., your response MUST be written in that language). Do not respond in English unless the original question was in English.
 
 Provide a clear, well-reasoned final answer that represents the debate's collective wisdom:"""
 
@@ -279,7 +283,8 @@ async def generate_conversation_title(user_query: str) -> str:
     """
     title_prompt = (
         "Generate a very short title (3-5 words maximum) that summarizes the following question.\n"
-        "The title should be concise and descriptive. Do not use quotes or punctuation.\n\n"
+        "The title should be concise and descriptive. Do not use quotes or punctuation.\n"
+        "IMPORTANT: You MUST generate the title in the same language as the question (e.g., if Tamil, write in Tamil; if Spanish, write in Spanish; if French, write in French, etc.).\n\n"
         f"Question: {user_query}\n\n"
         "Title:"
     )
