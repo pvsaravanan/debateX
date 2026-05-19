@@ -39,6 +39,11 @@ export default function ChatInterface({
     scrollToBottom();
   }, [conversation]);
 
+  // Reset input when switching conversations
+  useEffect(() => {
+    setInput('');
+  }, [conversation?.id]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {

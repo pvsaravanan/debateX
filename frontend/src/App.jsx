@@ -41,17 +41,13 @@ function App() {
     }
   };
 
-  const handleNewConversation = async () => {
-    try {
-      const newConv = await api.createConversation();
-      setConversations([
-        { id: newConv.id, created_at: newConv.created_at, message_count: 0 },
-        ...conversations,
-      ]);
-      setCurrentConversationId(newConv.id);
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
+  const handleNewConversation = () => {
+    // If we're already on an empty/new chat, do nothing
+    if (currentConversationId === null || (currentConversation && currentConversation.messages.length === 0)) {
+      return;
     }
+    setCurrentConversationId(null);
+    setCurrentConversation(null);
   };
 
   const handleSelectConversation = (id) => {
