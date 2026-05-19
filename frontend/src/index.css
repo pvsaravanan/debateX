@@ -112,3 +112,38 @@ button {
   padding: 0;
   font-size: 0.9em;
 }
+
+/* Table styling for markdown tables */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-content th {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.markdown-content td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.markdown-content tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-content tr:hover {
+  background-color: rgba(255, 255, 255, 0.02);
+}
