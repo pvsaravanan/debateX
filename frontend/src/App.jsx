@@ -125,7 +125,13 @@ function App() {
             updateLastMessage((m) => { m.stage3 = event.data; m.loading.stage3 = false; });
             break;
           case 'title_complete':
-            loadConversations();
+            const newTitle = event.data.title;
+            setConversations((prev) =>
+              prev.map((c) => (c.id === activeId ? { ...c, title: newTitle } : c))
+            );
+            setCurrentConversation((prev) =>
+              prev && prev.id === activeId ? { ...prev, title: newTitle } : prev
+            );
             break;
           case 'complete':
             loadConversations();

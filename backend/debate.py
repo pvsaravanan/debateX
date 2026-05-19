@@ -277,29 +277,56 @@ async def generate_conversation_title(user_query: str) -> str:
     Returns:
         A short title (3-5 words)
     """
-    title_prompt = f"""Generate a very short title (3-5 words maximum) that summarizes the following question.
-The title should be concise and descriptive. Do not use quotes or punctuation in the title.
-
-Question: {user_query}
-
-Title:"""
+    title_prompt = (
+        "Generate a very short title (3-5 words maximum) that summarizes the following question.\n"
+        "The title should be concise and descriptive. Do not use quotes or punctuation.\n\n"
+        f"Question: {user_query}\n\n"
+        "Title:"
+    )
 
     messages = [{"role": "user", "content": title_prompt}]
 
-    try:
-        # Use nvidia/nemotron-3-nano-30b-a3b:free for title generation (extremely fast and free)
-        response = await query_model("nvidia/nemotron-3-nano-30b-a3b:free", messages, timeout=30.0)
-    except Exception:
-        response = None
+    response = None
+    # 1. Try with moderator_MODEL first if available
+    if moderator_MODEL:
+        try:
+            response = await query_model(moderator_MODEL, messages, timeout=15.0)
+        except Exception as e:
+            print(f"Failed to query title with moderator model: {e}")
 
+    # 2. Try with nvidia/nemotron-3-nano-30b-a3b:free next
     if response is None:
-        # Fallback to a generic title
-        return "New Conversation"
+        try:
+            response = await query_model("nvidia/nemotron-3-nano-30b-a3b:free", messages, timeout=15.0)
+        except Exception:
+            pass
 
-    title = response.get('content', 'New Conversation').strip()
+    # 3. Try with any of the debate_MODELS
+    if response is None:
+        for model in debate_MODELS:
+            try:
+                response = await query_model(model, messages, timeout=10.0)
+                if response is not None:
+                    break
+            except Exception:
+                continue
 
-    # Clean up the title - remove quotes, limit length
-    title = title.strip('"\'')
+    # Parse and cleanup
+    title = ""
+    if response is not None:
+        title = response.get('content', '').strip()
+
+    title = title.strip('"\' \n\r\t')
+
+    # If no title could be generated, fall back to first few words of the user query
+    if not title or title.lower() == "new conversation":
+        words = [w for w in user_query.strip().split() if w]
+        if words:
+            title = " ".join(words[:4])
+            if len(words) > 4:
+                title += "..."
+        else:
+            title = "New Conversation"
 
     # Truncate if too long
     if len(title) > 50:
