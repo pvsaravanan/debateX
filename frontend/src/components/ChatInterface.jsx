@@ -14,18 +14,7 @@ const BattleIcon = () => (
   </svg>
 );
 
-const PlusIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 5v14M5 12h14" />
-  </svg>
-);
 
-const ClockIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <polyline points="12 6 12 12 16 14" />
-  </svg>
-);
 
 const SendIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -139,10 +128,6 @@ export default function ChatInterface({
             rows={1}
           />
           <div className="input-footer">
-            <div className="input-actions">
-              <button type="button" className="action-btn"><PlusIcon /></button>
-              <button type="button" className="action-btn"><ClockIcon /></button>
-            </div>
             <button 
               type="submit" 
               className={`send-btn ${input.trim() ? 'active' : ''}`}

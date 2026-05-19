@@ -105,23 +105,7 @@
 .input-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.input-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.action-btn {
-  padding: 8px;
-  border-radius: 8px;
-  color: var(--text-secondary);
-}
-
-.action-btn:hover {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
+  justify-content: flex-end;
 }
 
 .send-btn {
