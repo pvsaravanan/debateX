@@ -79,7 +79,7 @@ IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
 - Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
 - Do not add any other text or explanations in the ranking section
 
-CRITICAL LANGUAGE REQUIREMENT: You MUST write all your comments and evaluations in the same language as the user's original question (e.g., if the question is in Tamil, write in Tamil; if Spanish, write in Spanish; if French, write in French, etc.). The "FINAL RANKING:" header and label format (e.g., "Response A") must remain in English.
+CRITICAL LANGUAGE REQUIREMENT: You MUST write all your comments and evaluations strictly in English, regardless of the language of the user's original question. The "FINAL RANKING:" header and label format (e.g., "Response A") must also remain in English.
 
 Example of the correct format for your ENTIRE response:
 
@@ -156,32 +156,44 @@ Your task as moderator is to synthesize all of this information into a single, c
 - The peer rankings and what they reveal about response quality
 - Any patterns of agreement or disagreement
 
-CRITICAL LANGUAGE REQUIREMENT: You MUST write your final response in the same language as the user's original question (e.g., if the question is in Tamil, Hindi, Spanish, French, German, Japanese, etc., your response MUST be written in that language). Do not respond in English unless the original question was in English.
+CRITICAL LANGUAGE REQUIREMENT: You MUST write your final response strictly in English, regardless of the language of the user's original question.
 
 Provide a clear, well-reasoned final answer that represents the debate's collective wisdom:"""
 
     messages = [{"role": "user", "content": moderator_prompt}]
 
     # Query the moderator model
-    response = await query_model(moderator_MODEL, messages)
+    response = None
+    try:
+        response = await query_model(moderator_MODEL, messages)
+    except Exception as e:
+        print(f"Moderator model {moderator_MODEL} failed with exception: {e}")
 
-    if response is None:
-        # Fallback if moderator fails - try alternative model if available
-        print(f"Moderator model {moderator_MODEL} failed. Attempting fallback synthesis...")
+    content = response.get('content', '').strip() if response else ""
+
+    if not content:
+        # Fallback if moderator fails or returns empty - try alternative model if available
+        print(f"Moderator model {moderator_MODEL} failed or returned empty. Attempting fallback synthesis...")
         
         # Try to get a simple synthesis from first available debate model
         for model in debate_MODELS:
-            fallback_response = await query_model(model, messages)
-            if fallback_response is not None:
-                return {
-                    "model": model,
-                    "response": fallback_response.get('content', 'Unable to generate synthesis')
-                }
+            try:
+                fallback_response = await query_model(model, messages)
+                fallback_content = fallback_response.get('content', '').strip() if fallback_response else ""
+                
+                if fallback_content:
+                    return {
+                        "model": model,
+                        "response": fallback_content
+                    }
+            except Exception as e:
+                print(f"Fallback model {model} failed with exception: {e}")
+                continue
         
         # Final fallback
         return {
             "model": moderator_MODEL,
-            "response": "Error: Unable to generate final synthesis. Please try again."
+            "response": "Error: Unable to generate final synthesis. All models failed or returned empty responses."
         }
 
     return {
