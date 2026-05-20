@@ -124,9 +124,7 @@ export default function Sidebar({
                 onClick={() => onSelectConversation(conv.id)}
                 title={!isExpanded ? (conv.title || 'New Conversation') : ""}
               >
-                <div className="chat-icon-wrapper">
-                  {getChatIcon(conv.id)}
-                </div>
+
                 {editingId === conv.id ? (
                   <input
                     ref={editInputRef}
