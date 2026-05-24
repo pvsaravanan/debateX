@@ -154,17 +154,19 @@ async def probe_model(
     user_query: str,
 ) -> Optional[ModelConfidenceScore]:
     """
-    Sample *model* three times at temperatures 0.3, 0.7, 1.0 in parallel.
+    Sample *model* three times at temperatures 0.3, 0.7, 1.0 **sequentially**
+    with a small stagger delay to avoid hammering rate limits.
     Returns a ModelConfidenceScore or None if too many probes failed.
     """
     messages = [{"role": "user", "content": user_query}]
 
-    # Fire all three probes in parallel
-    tasks = [
-        _probe_model_at_temperature(model, messages, t)
-        for t in PROBE_TEMPERATURES
-    ]
-    raw_responses: List[Optional[str]] = await asyncio.gather(*tasks, return_exceptions=False)
+    # Fire probes sequentially with a tiny delay to avoid rate limit bursts
+    raw_responses: List[Optional[str]] = []
+    for i, t in enumerate(PROBE_TEMPERATURES):
+        if i > 0:
+            await asyncio.sleep(0.4)  # stagger requests to stay within RPM
+        resp = await _probe_model_at_temperature(model, messages, t)
+        raw_responses.append(resp)
 
     # Build TemperatureProbe list, using fallback text for failures
     probes: List[TemperatureProbe] = []
@@ -198,6 +200,9 @@ async def probe_model(
     )
 
 
+# Maximum number of models to probe (keeps API call count reasonable)
+MAX_PROBE_MODELS = 3
+
 # ── Main entry point ───────────────────────────────────────────────────────
 
 async def run_metacognition(
@@ -205,7 +210,12 @@ async def run_metacognition(
     models: Optional[List[str]] = None,
 ) -> MetacognitionResult:
     """
-    Run metacognition probes on *all* (or the supplied) models in parallel.
+    Run metacognition probes on a sample of models in parallel.
+
+    To avoid rate limit explosions, at most MAX_PROBE_MODELS models are probed.
+    Within each model the 3 temperature calls are staggered sequentially.
+    Across models, probes still run concurrently (parallel per-model, sequential
+    within each model).
 
     Returns a MetacognitionResult with per-model confidence scores and a
     human-readable summary string suitable for injection into the Chairman prompt.
@@ -213,8 +223,11 @@ async def run_metacognition(
     if models is None:
         models = debate_MODELS
 
-    # All probes for all models fire simultaneously
-    tasks = [probe_model(m, user_query) for m in models]
+    # Sample a subset to keep total call count manageable
+    probe_models = models[:MAX_PROBE_MODELS]
+
+    # Run per-model probes concurrently (each model is sequential within itself)
+    tasks = [probe_model(m, user_query) for m in probe_models]
     results: List[Optional[ModelConfidenceScore]] = await asyncio.gather(
         *tasks, return_exceptions=False
     )

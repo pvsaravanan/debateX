@@ -184,24 +184,26 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Pre-flight: metacognition + Round 1 fire in parallel
+            # Round 1: Collect responses first (no rate limit competition)
             yield f"data: {json.dumps({'type': 'metacognition_start'})}\n\n"
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
 
-            meta_task = asyncio.create_task(run_metacognition(request.content))
-            stage1_task = asyncio.create_task(stage1_collect_responses(request.content))
-
-            metacognition_result = await meta_task
-            metacognition_serialized = serialize_metacognition_result(metacognition_result)
-            yield f"data: {json.dumps({'type': 'metacognition_complete', 'data': metacognition_serialized})}\n\n"
-
-            stage1_results = await stage1_task
+            stage1_results = await stage1_collect_responses(request.content)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+            # Start metacognition concurrently with Round 2 (rate limits are separate windows by now)
+            meta_task = asyncio.create_task(run_metacognition(request.content))
 
             # Round 2: Collect rankings
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
             stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+            # Collect metacognition result (should be done by now, or nearly so)
+            metacognition_result = await meta_task
+            metacognition_serialized = serialize_metacognition_result(metacognition_result)
+            yield f"data: {json.dumps({'type': 'metacognition_complete', 'data': metacognition_serialized})}\n\n"
+
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
             # Round 3: Revise or Defend
