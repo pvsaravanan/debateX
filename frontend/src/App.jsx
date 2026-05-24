@@ -94,8 +94,9 @@ function App() {
         round4: null,
         stage3: null,
         disagreement_map: null,
+        metacognition: null,
         metadata: null,
-        loading: { stage1: false, stage2: false, round3: false, round4: false, stage3: false },
+        loading: { metacognition: false, stage1: false, stage2: false, round3: false, round4: false, stage3: false },
       };
 
       setCurrentConversation((prev) => ({
@@ -105,6 +106,12 @@ function App() {
 
       await api.sendMessageStream(activeId, content, (eventType, event) => {
         switch (eventType) {
+          case 'metacognition_start':
+            updateLastMessage((m) => { m.loading.metacognition = true; });
+            break;
+          case 'metacognition_complete':
+            updateLastMessage((m) => { m.metacognition = event.data; m.loading.metacognition = false; });
+            break;
           case 'stage1_start':
             updateLastMessage((m) => { m.loading.stage1 = true; });
             break;
@@ -155,6 +162,7 @@ function App() {
           case 'error':
             updateLastMessage((m) => {
               m.error = event.message || "An unexpected error occurred.";
+              m.loading.metacognition = false;
               m.loading.stage1 = false;
               m.loading.stage2 = false;
               m.loading.round3 = false;

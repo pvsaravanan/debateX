@@ -6,6 +6,7 @@ import Round3 from './Round3';
 import Round4 from './Round4';
 import Stage3 from './Stage3';
 import DisagreementPanel from './DisagreementPanel';
+import ConfidenceHeatmap from './ConfidenceHeatmap';
 import './ChatInterface.css';
 
 const BattleIcon = () => (
@@ -86,6 +87,9 @@ export default function ChatInterface({
                       <div className="user-bubble">{msg.content}</div>
                     ) : (
                       <div className="assistant-stages">
+                        {msg.loading?.metacognition && <div className="loading-stage">Pre-flight: probing model self-consistency...</div>}
+                        {msg.metacognition && <ConfidenceHeatmap data={msg.metacognition} />}
+
                         {msg.loading?.stage1 && <div className="loading-stage">Round 1: Gathering initial answers...</div>}
                         {msg.stage1 && <Stage1 responses={msg.stage1} />}
                         
