@@ -10,7 +10,7 @@ import json
 import asyncio
 
 from . import storage
-from .debate import run_full_debate, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
+from .debate import run_full_debate, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, stage3_revise_or_defend, stage4_challenger_critique, stage5_chairman_synthesis
 
 app = FastAPI(title="DebateX API")
 
@@ -115,7 +115,7 @@ async def delete_conversation(conversation_id: str):
 @app.post("/api/conversations/{conversation_id}/message")
 async def send_message(conversation_id: str, request: SendMessageRequest):
     """
-    Send a message and run the 3-stage debate process.
+    Send a message and run the 5-round debate process.
     Returns the complete response with all stages.
     """
     # Check if conversation exists
@@ -134,7 +134,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
-    # Run the 3-stage debate process
+    # Run the 5-round debate process
     stage1_results, stage2_results, stage3_result, metadata = await run_full_debate(
         request.content
     )
@@ -144,7 +144,9 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         conversation_id,
         stage1_results,
         stage2_results,
-        stage3_result
+        stage3_result,
+        rounds=metadata.get("rounds"),
+        metadata=metadata
     )
 
     # Return the complete response with metadata
@@ -152,14 +154,15 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         "stage1": stage1_results,
         "stage2": stage2_results,
         "stage3": stage3_result,
-        "metadata": metadata
+        "metadata": metadata,
+        "rounds": metadata.get("rounds")
     }
 
 
 @app.post("/api/conversations/{conversation_id}/message/stream")
 async def send_message_stream(conversation_id: str, request: SendMessageRequest):
     """
-    Send a message and stream the 3-stage debate process.
+    Send a message and stream the 5-round debate process.
     Returns Server-Sent Events as each stage completes.
     """
     # Check if conversation exists
@@ -180,21 +183,54 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses
+            # Round 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             stage1_results = await stage1_collect_responses(request.content)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
-            # Stage 2: Collect rankings
+            # Round 2: Collect rankings
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
             stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
 
-            # Stage 3: Synthesize final answer
+            # Round 3: Revise or Defend
+            yield f"data: {json.dumps({'type': 'round3_start'})}\n\n"
+            stage3_results = await stage3_revise_or_defend(request.content, stage1_results, stage2_results, label_to_model, aggregate_rankings)
+            yield f"data: {json.dumps({'type': 'round3_complete', 'data': stage3_results})}\n\n"
+
+            # Round 4: Challenger Critique
+            yield f"data: {json.dumps({'type': 'round4_start'})}\n\n"
+            stage4_result = await stage4_challenger_critique(request.content, stage3_results, aggregate_rankings)
+            yield f"data: {json.dumps({'type': 'round4_complete', 'data': stage4_result})}\n\n"
+
+            # Round 5: Chairman Synthesis
             yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            stage5_result = await stage5_chairman_synthesis(
+                request.content,
+                stage1_results,
+                stage2_results,
+                stage3_results,
+                stage4_result,
+                label_to_model,
+                aggregate_rankings
+            )
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage5_result})}\n\n"
+
+            # Compile new rounds list
+            rounds = [
+                {"round": 1, "type": "initial_answers", "data": stage1_results},
+                {"round": 2, "type": "peer_review", "data": stage2_results},
+                {"round": 3, "type": "revise_or_defend", "data": stage3_results},
+                {"round": 4, "type": "challenger", "data": stage4_result},
+                {"round": 5, "type": "chairman_synthesis", "data": stage5_result}
+            ]
+
+            metadata = {
+                "label_to_model": label_to_model,
+                "aggregate_rankings": aggregate_rankings,
+                "rounds": rounds
+            }
 
             # Wait for title generation if it was started
             if title_task:
@@ -207,7 +243,9 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 conversation_id,
                 stage1_results,
                 stage2_results,
-                stage3_result
+                stage5_result,
+                rounds=rounds,
+                metadata=metadata
             )
 
             # Send completion event

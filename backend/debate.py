@@ -352,15 +352,329 @@ async def generate_conversation_title(user_query: str) -> str:
     return title
 
 
+async def stage3_revise_or_defend(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    label_to_model: Dict[str, str],
+    aggregate_rankings: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Stage 3: Models see anonymized rankings and evaluations, and revise or defend their responses.
+    """
+    # Create the anonymized responses text from Stage 1
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result['response']}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    # Format the peer evaluations
+    reviews_formatted = ""
+    for idx, r in enumerate(stage2_results):
+        reviews_formatted += f"### Reviewer {idx+1} Evaluation:\n{r['ranking']}\n\n"
+
+    # Format the aggregate standings
+    standings_formatted = "\n".join([
+        f"- {next((k for k, v in label_to_model.items() if v == item['model']), item['model'])}: Average Rank {item['average_rank']} (over {item['rankings_count']} votes)"
+        for item in aggregate_rankings
+    ])
+
+    # Generate prompts for all participating models
+    prompts = {}
+    for result in stage1_results:
+        model = result['model']
+        model_label = next((k for k, v in label_to_model.items() if v == model), None)
+        if not model_label:
+            continue
+
+        prompt = f"""You are a council member of an LLM deliberation system. In the initial round, you provided a response to the following question.
+
+Original Question: {user_query}
+
+Here are the anonymized initial responses from all council members:
+{responses_text}
+
+Here is the feedback and evaluations from your peers (including evaluations of your response and others):
+{reviews_formatted}
+
+Here are the aggregate rankings calculated from peer evaluations (lower average rank is better):
+{standings_formatted}
+
+Your initial response is labeled as: {model_label}
+
+Based on this peer feedback, you now have the opportunity to either REVISE or DEFEND your response.
+- Choose REVISE if you agree with valid criticisms and want to improve your answer.
+- Choose DEFEND if you believe your original answer is correct and you want to explain why the critiques are invalid or why your reasoning stands.
+
+CRITICAL INSTRUCTIONS:
+1. You MUST start your response with a decision header on the very first line:
+   - Either "DECISION: REVISE"
+   - Or "DECISION: DEFEND"
+2. Next, write your explanation/defense (if defending) or your newly revised, complete answer (if revising).
+   - If you chose REVISE, provide your complete, updated, and improved final answer.
+   - If you chose DEFEND, explain your defense clearly.
+3. You MUST write all your comments and response strictly in English.
+
+Your decision and response:"""
+        prompts[model] = [{"role": "user", "content": prompt}]
+
+    # Query all models in parallel
+    models_to_query = list(prompts.keys())
+    responses = {}
+    if models_to_query:
+        tasks = [query_model(model, prompts[model]) for model in models_to_query]
+        import asyncio
+        gathers = await asyncio.gather(*tasks, return_exceptions=True)
+        for model, resp in zip(models_to_query, gathers):
+            if isinstance(resp, Exception):
+                print(f"Model {model} failed in Round 3 with exception: {resp}")
+                responses[model] = None
+            else:
+                responses[model] = resp
+
+    stage3_results = []
+    for model, response in responses.items():
+        if response is not None:
+            full_text = response.get('content', '').strip()
+            # Parse decision
+            decision = "REVISE"
+            cleaned_content = full_text
+            if "DECISION: DEFEND" in full_text:
+                decision = "DEFEND"
+                lines = full_text.split('\n')
+                cleaned_content = "\n".join([line for line in lines if "DECISION:" not in line]).strip()
+            elif "DECISION: REVISE" in full_text:
+                decision = "REVISE"
+                lines = full_text.split('\n')
+                cleaned_content = "\n".join([line for line in lines if "DECISION:" not in line]).strip()
+            
+            stage3_results.append({
+                "model": model,
+                "decision": decision,
+                "response": cleaned_content,
+                "raw_response": full_text
+            })
+    return stage3_results
+
+
+async def stage4_challenger_critique(
+    user_query: str,
+    stage3_results: List[Dict[str, Any]],
+    aggregate_rankings: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Stage 4: Assign one model as Challenger to find the weakest point in the leading answer.
+    """
+    if not stage3_results or not aggregate_rankings:
+        return {
+            "model": "Challenger Model",
+            "response": "No models available to challenge."
+        }
+
+    # Find the leading model (first in aggregate rankings)
+    leading_model_name = aggregate_rankings[0]['model']
+    leading_result = next((r for r in stage3_results if r['model'] == leading_model_name), stage3_results[0])
+    leading_response = leading_result['response']
+
+    # Select Challenger: worst model in aggregate rankings
+    # If only 1 model, it challenges itself. Otherwise, select the last model.
+    challenger_model_name = aggregate_rankings[-1]['model']
+    if challenger_model_name == leading_model_name and len(aggregate_rankings) > 1:
+        challenger_model_name = aggregate_rankings[-2]['model']
+
+    challenger_prompt = f"""You are the assigned Challenger in an LLM Deliberation Council. 
+   
+The council has been debating the following question:
+Question: {user_query}
+
+After multiple rounds of discussion and revision, the leading answer generated by the council's top-performing model is:
+
+---
+LEADING ANSWER:
+{leading_response}
+---
+
+Your ONLY job is to challenge this leading answer. Be critical, aggressive, and thorough. Find its weakest point, logical flaws, incorrect assumptions, overlooked details, or potential edge cases that it fails to address.
+
+Do NOT provide a general answer to the original question. Focus 100% on pointing out the flaws and weaknesses in the leading answer.
+
+CRITICAL: You MUST write your critique strictly in English.
+
+Your critique:"""
+
+    messages = [{"role": "user", "content": challenger_prompt}]
+    
+    try:
+        response = await query_model(challenger_model_name, messages)
+        content = response.get('content', '').strip() if response else ""
+    except Exception as e:
+        print(f"Challenger model {challenger_model_name} failed: {e}")
+        content = f"Error: Challenger {challenger_model_name} failed to generate critique."
+
+    return {
+        "model": challenger_model_name,
+        "response": content,
+        "target_model": leading_model_name,
+        "target_response": leading_response
+    }
+
+
+async def stage5_chairman_synthesis(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+    stage3_results: List[Dict[str, Any]],
+    challenger_result: Dict[str, Any],
+    label_to_model: Dict[str, str],
+    aggregate_rankings: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Stage 5: Chairman synthesizes the final response using the full deliberation history.
+    """
+    # Compile the deliberation history array
+    deliberation_history = [
+        {
+            "round": 1,
+            "name": "Initial Answers",
+            "data": [
+                {"model": r['model'], "response": r['response']}
+                for r in stage1_results
+            ]
+        },
+        {
+            "round": 2,
+            "name": "Peer Review & Rankings",
+            "data": [
+                {"model": r['model'], "ranking": r['ranking'], "parsed_ranking": r['parsed_ranking']}
+                for r in stage2_results
+            ],
+            "aggregate_rankings": aggregate_rankings,
+            "label_to_model": label_to_model
+        },
+        {
+            "round": 3,
+            "name": "Revise or Defend",
+            "data": [
+                {"model": r['model'], "decision": r.get('decision', 'REVISE'), "response": r['response']}
+                for r in stage3_results
+            ]
+        },
+        {
+            "round": 4,
+            "name": "Challenger Critique",
+            "data": {
+                "challenger_model": challenger_result.get('model'),
+                "critique": challenger_result.get('response'),
+                "target_model": challenger_result.get('target_model'),
+                "target_answer": challenger_result.get('target_response')
+            }
+        }
+    ]
+
+    import json
+    history_json = json.dumps(deliberation_history, indent=2)
+
+    # Narrative formatting for the model
+    stage1_summary = "\n\n".join([
+        f"- Model: {r['model']}\n  Response: {r['response']}"
+        for r in stage1_results
+    ])
+
+    stage2_summary = "\n\n".join([
+        f"- Model: {r['model']}\n  Peer Ranking Content: {r['ranking']}"
+        for r in stage2_results
+    ])
+
+    stage3_summary = "\n\n".join([
+        f"- Model: {r['model']} ({r.get('decision', 'REVISE')}):\n  Answer: {r['response']}"
+        for r in stage3_results
+    ])
+
+    chairman_prompt = f"""You are the Chairman/Moderator of a 5-round LLM deliberation council.
+
+The council has debated the following question:
+Question: {user_query}
+
+Below is the complete structured `deliberation_history` array containing the transcript and outputs of all 4 preceding rounds:
+
+```json
+{history_json}
+```
+
+Here is a summary of the rounds for your review:
+
+ROUND 1 - Initial Answers:
+{stage1_summary}
+
+ROUND 2 - Peer Rankings & Evaluations:
+{stage2_summary}
+
+ROUND 3 - Revise or Defend Responses:
+{stage3_summary}
+
+ROUND 4 - Challenger Critique:
+- Challenger Model: {challenger_result.get('model')}
+- Target/Leading Model: {challenger_result.get('target_model')}
+- Challenger's Critique: {challenger_result.get('response')}
+
+Your task as Chairman is to synthesize the entire history of this deliberation. You must:
+1. Analyze the initial answers and subsequent revisions/defenses.
+2. Weigh the peer rankings and evaluations carefully.
+3. Address the Challenger's critique: either incorporate its valid concerns to strengthen the final answer, or explain why the critique is addressed or invalid.
+4. Synthesize all insights into a single, comprehensive, highly authoritative, and definitive master answer to the user's original question.
+
+CRITICAL: You MUST write your final synthesis response strictly in English.
+
+Provide your definitive final synthesized response:"""
+
+    messages = [{"role": "user", "content": chairman_prompt}]
+
+    try:
+        response = await query_model(moderator_MODEL, messages)
+        content = response.get('content', '').strip() if response else ""
+    except Exception as e:
+        print(f"Chairman model {moderator_MODEL} failed: {e}")
+        content = ""
+
+    if not content:
+        # Fallback if chairman fails - use fallback models
+        print(f"Chairman model {moderator_MODEL} failed or returned empty. Using fallback synthesis...")
+        for model in debate_MODELS:
+            try:
+                fallback_response = await query_model(model, messages)
+                fallback_content = fallback_response.get('content', '').strip() if fallback_response else ""
+                if fallback_content:
+                    return {
+                        "model": model,
+                        "response": fallback_content
+                    }
+            except Exception as fe:
+                print(f"Fallback model {model} failed: {fe}")
+                continue
+
+        # Final fallback: use the leading answer from Round 3
+        leading_response = challenger_result.get('target_response', 'Error: Unable to synthesize final answer.')
+        return {
+            "model": "Fallback Synthesis (Leading Answer)",
+            "response": leading_response
+        }
+
+    return {
+        "model": moderator_MODEL,
+        "response": content
+    }
+
+
 async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
     """
-    Run the complete 3-stage debate process.
+    Run the complete 5-round debate process.
 
     Args:
         user_query: The user's question
 
     Returns:
-        Tuple of (stage1_results, stage2_results, stage3_result, metadata)
+        Tuple of (stage1_results, stage2_results, stage5_result, metadata)
     """
     # Stage 1: Collect individual responses
     stage1_results = await stage1_collect_responses(user_query)
@@ -378,17 +692,51 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
     # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
 
-    # Stage 3: Synthesize final answer
-    stage3_result = await stage3_synthesize_final(
+    # Stage 3: Revise or Defend
+    stage3_results = await stage3_revise_or_defend(
         user_query,
         stage1_results,
-        stage2_results
+        stage2_results,
+        label_to_model,
+        aggregate_rankings
     )
 
-    # Prepare metadata
+    # Stage 4: Challenger Critique
+    stage4_result = await stage4_challenger_critique(
+        user_query,
+        stage3_results,
+        aggregate_rankings
+    )
+
+    # Stage 5: Chairman Synthesis
+    stage5_result = await stage5_chairman_synthesis(
+        user_query,
+        stage1_results,
+        stage2_results,
+        stage3_results,
+        stage4_result,
+        label_to_model,
+        aggregate_rankings
+    )
+
+    # Compile the detailed rounds list
+    rounds = [
+        {"round": 1, "type": "initial_answers", "data": stage1_results},
+        {"round": 2, "type": "peer_review", "data": stage2_results},
+        {"round": 3, "type": "revise_or_defend", "data": stage3_results},
+        {"round": 4, "type": "challenger", "data": stage4_result},
+        {"round": 5, "type": "chairman_synthesis", "data": stage5_result}
+    ]
+
+    # Prepare metadata (keep label_to_model and aggregate_rankings for backwards compatibility)
     metadata = {
         "label_to_model": label_to_model,
-        "aggregate_rankings": aggregate_rankings
+        "aggregate_rankings": aggregate_rankings,
+        "rounds": rounds
     }
 
-    return stage1_results, stage2_results, stage3_result, metadata
+    # For legacy backwards-compatibility:
+    # stage1_results matches Round 1
+    # stage2_results matches Round 2
+    # stage3_result matches Round 5
+    return stage1_results, stage2_results, stage5_result, metadata

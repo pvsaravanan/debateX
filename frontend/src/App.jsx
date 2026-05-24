@@ -90,9 +90,11 @@ function App() {
         role: 'assistant',
         stage1: null,
         stage2: null,
+        round3: null,
+        round4: null,
         stage3: null,
         metadata: null,
-        loading: { stage1: false, stage2: false, stage3: false },
+        loading: { stage1: false, stage2: false, round3: false, round4: false, stage3: false },
       };
 
       setCurrentConversation((prev) => ({
@@ -113,6 +115,18 @@ function App() {
             break;
           case 'stage2_complete':
             updateLastMessage((m) => { m.stage2 = event.data; m.metadata = event.metadata; m.loading.stage2 = false; });
+            break;
+          case 'round3_start':
+            updateLastMessage((m) => { m.loading.round3 = true; });
+            break;
+          case 'round3_complete':
+            updateLastMessage((m) => { m.round3 = event.data; m.loading.round3 = false; });
+            break;
+          case 'round4_start':
+            updateLastMessage((m) => { m.loading.round4 = true; });
+            break;
+          case 'round4_complete':
+            updateLastMessage((m) => { m.round4 = event.data; m.loading.round4 = false; });
             break;
           case 'stage3_start':
             updateLastMessage((m) => { m.loading.stage3 = true; });
@@ -138,6 +152,8 @@ function App() {
               m.error = event.message || "An unexpected error occurred.";
               m.loading.stage1 = false;
               m.loading.stage2 = false;
+              m.loading.round3 = false;
+              m.loading.round4 = false;
               m.loading.stage3 = false;
             });
             setIsLoading(false);

@@ -242,6 +242,12 @@
   color: var(--accent-cyan);
 }
 
+.error-badge.groq-error {
+  background-color: rgba(245, 80, 54, 0.12);
+  color: #f55036;
+  border: 1px solid rgba(245, 80, 54, 0.35);
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

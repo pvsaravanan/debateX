@@ -46,9 +46,10 @@ async def query_groq(
             pass
         
         print(f"HTTP Error querying Groq model {model}: {e.response.status_code} - {error_msg}")
-        raise ValueError(error_msg)
+        raise ValueError(f"Groq API Error: {error_msg}")
     except Exception as e:
         import traceback
-        print(f"Error querying Groq model {model}: {e}")
+        err_msg = str(e) or type(e).__name__
+        print(f"Error querying Groq model {model}: {err_msg}")
         traceback.print_exc()
-        raise e
+        raise ValueError(f"Groq query failed: {err_msg}")
