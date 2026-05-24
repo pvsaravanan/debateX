@@ -71,3 +71,26 @@ This file records all changes made to the DebateX codebase starting from May 22,
   - Refined cognitive category routing rules to map `gpt-oss` and `qwen` models as target council selectors for technical, creative, factual, ethical, and mathematical queries.
 - **File Modified**: [tests/test_router.py](file:///c:/proj/debateX/tests/test_router.py)
   - Updated mock test model list to reflect the new set of models.
+
+### [2026-05-24 13:08] Disagreement Detection Engine & DisagreementPanel UI
+- **File Created**: [backend/disagreement.py](file:///c:/proj/debateX/backend/disagreement.py)
+  - New module implementing `DisagreementMap`, `DisagreementZone`, and `ClaimScore` dataclasses.
+  - `parse_disagreement_map()`: Parses the Chairman's structured JSON output (consensus points, divergence zones, per-model confidence scores) into a typed `DisagreementMap`.
+  - `build_disagreement_map_heuristic()`: Fallback engine using Jaccard token similarity to build a `DisagreementMap` when the Chairman LLM omits the structured block.
+  - `CHAIRMAN_DISAGREEMENT_SCHEMA`: Prompt fragment injected into the Chairman system prompt requesting structured JSON with `consensus_points`, `disagreement_zones`, `human_decision_needed`, and `confidence_scores[].score/stance`.
+- **File Modified**: [backend/debate.py](file:///c:/proj/debateX/backend/debate.py)
+  - Imports `disagreement` helpers.
+  - `stage5_chairman_synthesis()` now injects `CHAIRMAN_DISAGREEMENT_SCHEMA` into the Chairman prompt and parses / builds a `DisagreementMap` from the response. Returns `disagreement_map` alongside `response` and `model`.
+  - `run_full_debate()` exposes `disagreement_map` in the returned `metadata` dict.
+- **File Modified**: [backend/main.py](file:///c:/proj/debateX/backend/main.py)
+  - `stage3_complete` SSE event now includes `disagreement_map` field.
+  - Metadata dict persisted to storage now includes `disagreement_map`.
+- **File Modified**: [frontend/src/App.jsx](file:///c:/proj/debateX/frontend/src/App.jsx)
+  - `assistantMessage` now has `disagreement_map: null` field.
+  - `stage3_complete` handler saves `event.disagreement_map` to message state.
+- **File Created**: [frontend/src/components/DisagreementPanel.jsx](file:///c:/proj/debateX/frontend/src/components/DisagreementPanel.jsx)
+  - New React component rendering three visually distinct zones: CONSENSUS (all-model agreement points), DISAGREEMENT (expandable per-claim cards with model-by-model positions, divergence reasoning, and human-review flags), and CONFIDENCE MAP (stance badges + animated score bars per model per claim).
+- **File Created**: [frontend/src/components/DisagreementPanel.css](file:///c:/proj/debateX/frontend/src/components/DisagreementPanel.css)
+  - Premium dark glassmorphic styling with animated fade-in, consensus/disagreement color coding, stance badges (AGREE/PARTIAL/DISAGREE/UNKNOWN), and gradient score bars.
+- **File Modified**: [frontend/src/components/ChatInterface.jsx](file:///c:/proj/debateX/frontend/src/components/ChatInterface.jsx)
+  - Imports `DisagreementPanel` and renders it after Stage3 synthesis when `msg.disagreement_map` is present.
