@@ -1,5 +1,3 @@
-<div align="center">
-
 # ⚖️ debateX
 
 **Enterprise-grade multi-LLM deliberation engine. Get council-vetted answers, not single-model guesses.**
@@ -7,106 +5,203 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://reactjs.org)
-
-</div>
-
----
-
-## Overview
-
-**debateX** is a self-hosted, production-ready multi-LLM deliberation system. Instead of asking a single LLM and accepting its potential blind spots, debateX convenes a council of diverse language models (via OpenRouter and Groq) — each generating independent responses, reviewing each other anonymously to prevent bias, and deferring to a designated Chairman LLM for high-confidence final synthesis.
-
-### Features
-- ✨ **Three-Stage Deliberation Pipeline** — Independent reasoning → anonymized peer review → chairman synthesis
-- 🔐 **Architectural Anonymization** — Models review peers without knowing their identity, eliminating provider bias
-- ⚡ **Async Parallel Execution** — Fast execution via concurrent LLM queries
-- 🔄 **Multi-Provider Support** — Seamlessly mix and match models from OpenRouter and Groq
-- 🏗️ **Zero Frameworks** — Pure Python orchestration; no LangChain/CrewAI bloat
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100.0%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![Groq](https://img.shields.io/badge/Groq-Supported-orange)](https://groq.com)
 
 ---
 
-## Architecture
+## 🌟 Overview
 
-![System Architecture](./public/images/system_arch.png)
+**debateX** is a production-ready, self-hosted multi-LLM deliberation platform. Instead of trusting a single model's isolated perspective, **debateX** orchestrates a dynamic council of diverse language models (powered by **Groq** and **OpenRouter**). 
 
-### How It Works: Three-Stage Deliberation
-
-![Three-Stage Deliberation Pipeline](./public/images/pipeline.png)
-
-**Key Insight:** Stage 1 & 2 run in parallel. Anonymization in Stage 2 prevents bias toward well-known vendors. Stage 3 brings coherence using statistical consensus.
-
-### Core Components
-
-**Backend Orchestration** (`backend/debate.py` & `backend/llm.py`)
-- `stage1_collect_responses()` — Parallel queries to all council members via OpenRouter/Groq
-- `stage2_collect_rankings()` — Models evaluate anonymized peers, returns parsed rankings
-- `stage3_synthesize_final()` — Chairman synthesizes Stage 1 + Stage 2 context into final answer
-- `calculate_aggregate_rankings()` — Computes statistical consensus across all peer evaluations
-- Dynamic routing to Groq or OpenRouter based on model prefixes.
-
-**API Server** (`backend/main.py`)
-- FastAPI endpoints for query submission and conversation history
-- Full CORS support for multi-origin deployments
-
-**Storage** (`backend/storage.py`)
-- JSON-based persistence (SQLite ready in roadmap)
-- Conversation history with metadata
-
-### Key Design Decisions
-
-1. **Anonymization is Architectural**  
-   Identity masking happens in the orchestrator, not via prompt tricks. Models can't "recognize" each other's writing style.
-
-2. **Rankings Aggregate Statistically**  
-   `calculate_aggregate_rankings()` computes average rank position across all peer evaluations, not just majority vote.
-
-3. **Metadata is Ephemeral**  
-   `label_to_model` mappings and `aggregate_rankings` are returned via API only — never persisted to disk.
-
-4. **Zero Agent Framework Dependency**  
-   No LangChain, CrewAI, or AutoGen. Pure Python orchestration + direct async API calls.
-
-5. **Full Transparency by Default**  
-   All raw outputs inspectable via web UI. Parsed rankings shown next to raw text.
+The platform passes query contexts through an advanced, anonymized multi-round cognitive debate structure, allowing models to cross-examine arguments, refine their logic, defend coordinates, and isolate potential flaws before a designated Chairman model delivers a beautifully synthesized final consensus.
 
 ---
 
-## Quick Start (5 minutes)
+## 🚀 Key Evolutionary Features
 
-### 1. Clone & Setup
+### 1. 🔄 Advanced 5-Round Deliberation Pipeline
+The orchestration layer has been evolved from a simple linear flow into a rigorous **5-Round Deliberation Pipeline**:
+* **Round 1 (Stage 1 - Respond)**: Council models generate independent, blind initial answers.
+* **Round 2 (Stage 2 - Peer Review & Rank)**: Council answers are completely anonymized, and models evaluate and rank their peers' answers to eliminate provider bias.
+* **Round 3 (Defend & Revise)**: Models are presented with the anonymous ranks, peer critiques, and their own positions, allowing them to defend their logic or revise their answers.
+* **Round 4 (Challenger Critique)**: A dedicated council member is designated as the **Challenger**. Its sole task is to construct a rigorous critique isolating the absolute weakest points of the leading answers.
+* **Round 5 (Stage 3 - Chairman Synthesis)**: The designated **Chairman (Moderator)** ingests the entire historical context of all four rounds to produce a high-confidence, comprehensive final response.
+
+### 2. 🎭 Dynamic Cognitive Persona Allocation
+Incorporates a deterministic **shift-based role rotation** engine (`backend/roles.py`) that assigns specific behavioral personas per query:
+* **Reasoner (2-3 models)**: Drives deep analytical and conceptual logic.
+* **Fact-Checker (1 model)**: Equipped with dedicated Google-search capability to verify data bounds.
+* **Devil's Advocate (1 model)**: Challenges consensus and exposes hidden assumptions.
+* **Steelmanner (1 model)**: Re-articulates and strengthens competing arguments for fair assessment.
+* **Chairman (1 model)**: Orchestrates and synthesizes the discussion.
+
+### 3. 🎯 Fast Dual-Path Query Routing & Cost Estimation
+Features a highly optimized query router (`backend/router.py`) that:
+* Classifies incoming requests into one of 5 categories: `technical/code`, `creative`, `factual/research`, `ethical/philosophical`, or `math/logic`.
+* Runs a dual-path classification workflow (sub-second fast LLM classification, falling back gracefully to local regex keywords on network hiccups).
+* Recommends optimal model subsets, calculates token consumption projections, and outputs a predicted USD cost per query using calibrated pricing parameters.
+
+### 4. ⚡ Real-Time SSE Stream & Interactive UI
+Upgraded to a high-speed Server-Sent Events (SSE) streaming API (`backend/main.py`) paired with an elegant, responsive React dashboard showcasing:
+* Live-updating stages, active round transitions, and aggregate peer ranks.
+* Markdown-supported raw outputs, peer critique maps, and detailed cost estimation widgets.
+* Sleek glassmorphic theme styling with tailored error reporting panels.
+
+---
+
+## 🛠️ System Architecture & Workflow
+
+```mermaid
+graph TD
+    UserQuery[User Query] --> Router{Query Router}
+    Router -- LLM / Regex --> Classify[Category Classifier]
+    Classify --> Assign[Dynamic Persona Allocator]
+    Assign --> Round1[Round 1: Initial Responses]
+    Round1 --> Round2[Round 2: Anonymized Peer Review]
+    Round2 --> Round3[Round 3: Defend or Revise]
+    Round3 --> Round4[Round 4: Challenger Critique]
+    Round4 --> Round5[Round 5: Chairman Synthesis]
+    Round5 --> SSE[Real-Time SSE Streaming Output]
+```
+
+---
+
+## ⚙️ Supported Models
+
+### **Groq Cloud API**
+* `groq/llama-3.3-70b-versatile` (Primary Chairman & High-Performance Synthesis)
+* `groq/openai/gpt-oss-120b` (Reasoning & Code Expert)
+* `groq/qwen/qwen3-32b` (Precision Logic Node)
+* `groq/llama-3.1-8b-instant` (High-Speed Processing)
+
+### **OpenRouter API (Free Tier)**
+* `deepseek/deepseek-v4-flash:free` (Default Moderator fallback)
+* `z-ai/glm-4.5-air:free` (Diverse Context processing)
+* `liquid/lfm-2.5-1.2b-instruct:free` (Lightweight semantic node)
+* `nvidia/nemotron-3-nano-30b-a3b:free` (Logical extraction)
+
+---
+
+## 📥 Quick Start Setup Guide
+
+Follow these steps to get your local environment configured and running in under **5 minutes**.
+
+### 1. Prerequisite Installations
+* **Python 3.11 or higher**
+* **Node.js v18 or higher**
+* **uv Package Manager** (highly recommended for sub-second Python dependency resolution)
+  * Install `uv` via: `pip install uv` or `curl -sSf https://astral.sh/uv/install.sh | sh`
+
+### 2. Clone & Setup Configuration
+Clone the repository to your workspace:
 ```bash
-git clone https://github.com/YOUR_USERNAME/debateX.git
+git clone https://github.com/pvsaravanan/debateX.git
 cd debateX
+```
+
+Create and configure your `.env` environment file:
+```bash
 cp .env.example .env
 ```
-Edit `.env` and add your API keys:
+
+Open `.env` and fill in your API credentials:
 ```env
-OPENROUTER_API_KEY=sk-or-...
-GROQ_API_KEY=gsk_...
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
-### 2. Run the App
-**Windows (One-Click):** Double-click `run.bat`
-**macOS / Linux:** Run `./start.sh`
-**Docker:** `docker compose up --build`
+---
 
-### 3. Start Debating
-Open `http://localhost:5173` in your browser and ask a complex question!
+## 🏃 Running the Application
+
+### Method A: One-Click Launch (Recommended)
+
+* **Windows**: Double-click [run.bat](file:///c:/proj/debateX/run.bat) from your file explorer, or run it in Command Prompt:
+  ```cmd
+  run.bat
+  ```
+* **macOS / Linux**: Grant execution permissions and run [start.sh](file:///c:/proj/debateX/start.sh):
+  ```bash
+  chmod +x start.sh
+  ./start.sh
+  ```
+
+*These scripts automatically resolve dependencies (using `uv sync` & `npm install`), initialize local virtual environments, and boot up both the FastAPI backend server (port `8001`) and the Vite React frontend (port `5173`).*
 
 ---
 
-## Documentation
+### Method B: Manual Manual Commands
 
-For deep dives and configuration, see our `docs/` folder:
+#### 1. Setup & Run the Backend
+Using **`uv`** (Recommended):
+```bash
+# Sync dependencies and start uvicorn
+uv sync
+uv run python -m backend.main
+```
 
-- 🔌 [API Reference](docs/api_reference.md)
-- 🚀 [Deployment & Configuration](docs/deployment_and_config.md)
-- 🛠️ [Development Guide](docs/development_guide.md)
+Using standard **`pip`**:
+```bash
+# Create a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies and run
+pip install -r requirements.txt
+python -m backend.main
+```
+*The backend server will run at: **http://localhost:8001***
+
+#### 2. Setup & Run the Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*The frontend development server will run at: **http://localhost:5173***
 
 ---
 
-## Contributing
-We welcome contributions! Please check out our [Development Guide](docs/development_guide.md) to get your local environment set up, and feel free to open Pull Requests for new features, additional providers, or UI enhancements.
+## 🧪 Running the Verification Test Suite
 
-## License
+Verify all models, dynamic routing modules, cost calculations, and role assignments work flawlessly by running the unit test suite:
+
+```bash
+# Run all tests
+uv run python -m unittest tests/test_roles.py tests/test_router.py
+
+# Or run individual modules
+uv run python -m unittest tests/test_roles.py
+uv run python -m unittest tests/test_router.py
+```
+
+---
+
+## 📖 Directory Structure
+
+```text
+├── .agent/               # Antigravity prompts and workflow integrations
+├── backend/
+│   ├── config.py         # Dynamic multi-provider model registrations
+│   ├── debate.py         # Core 5-Round pipeline orchestration logic
+│   ├── groq.py           # Groq API client interface
+│   ├── llm.py            # Provider wrapper routing facade
+│   ├── main.py           # FastAPI server & SSE streaming routing endpoints
+│   ├── openrouter.py     # OpenRouter API client interface
+│   ├── roles.py          # Dynamic role assignments & persona definitions
+│   ├── router.py         # Category router, pricing table & cost calculations
+│   └── storage.py        # Serialized JSON storage utilities
+├── frontend/
+│   ├── src/              # React components, style sheets, and pages
+│   └── package.json      # Frontend package details
+├── openspec/             # OpenSpec specifications library & changes archive
+├── tests/                # Verification test suites
+├── debateX.md            # Repository changes modification history logs
+└── README.md             # Systems overview & guide
+```
+
+---
+
+## ⚖️ License
 Licensed under the [MIT License](LICENSE).
