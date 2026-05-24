@@ -85,12 +85,12 @@ The endpoint yields lines starting with `data: ` containing serialized JSON obje
 
 | Event `type` | Payload Keys / Format | Description |
 | :--- | :--- | :--- |
-| `metacognition_start` | `{}` | Emitted when the pre-flight consistency probe begins (fires simultaneously with `stage1_start`). |
-| `metacognition_complete` | `{"data": MetacognitionResult}` | Emitted with the full per-model confidence scores, pairwise similarities, and tier assignments. See `MetacognitionResult` schema below. |
-| `stage1_start` | `{}` | Emitted when council starts generating initial responses (concurrent with metacognition). |
+| `metacognition_start` | `{}` | Emitted at the same time as `stage1_start`. Signals the UI to show a "probing consistency…" indicator. |
+| `stage1_start` | `{}` | Emitted when council starts generating initial responses. |
 | `stage1_complete` | `{"data": [...]}` | Array of `{"model": "name", "response": "..."}` objects representing successful Round 1 answers. |
-| `stage2_start` | `{}` | Emitted when peer evaluations and ranking begins. |
+| `stage2_start` | `{}` | Emitted when peer evaluations and ranking begins. Metacognition runs concurrently in the background. |
 | `stage2_complete` | `{"data": [...], "metadata": {"label_to_model": {...}, "aggregate_rankings": [...]}}` | Emitted with evaluation reviews, the de-anonymization mapping dictionary, and sorted list of average rankings. |
+| `metacognition_complete` | `{"data": MetacognitionResult}` | Emitted after stage2, with per-model confidence scores, pairwise similarities, and tier assignments. See `MetacognitionResult` schema below. |
 | `round3_start` | `{}` | Emitted when models start revising or defending their responses. |
 | `round3_complete` | `{"data": [...]}` | Emitted with an array of decision objects: `{"model": "name", "decision": "REVISE/DEFEND", "response": "..."}`. |
 | `round4_start` | `{}` | Emitted when Challenger model begins critique. |

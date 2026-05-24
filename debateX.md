@@ -4,6 +4,29 @@ This file records all changes made to the DebateX codebase starting from May 22,
 
 ## Change Log
 
+### [2026-05-24 21:15] Hotfix: Metacognition Rate-Limit Crash → No Response Bug
+
+**Root Cause:** The metacognition pre-flight probe was firing `N_models × 3 = 24+` simultaneous API calls (all temperatures in parallel, all models in parallel) *concurrently* with stage1's 8 more calls — totalling **32+ simultaneous Groq requests**. Groq's free-tier rate limit (30 RPM) was instantly exceeded. All probes silently returned `None`, then stage1 also failed, causing the SSE stream's `except` block to emit an `error` event with no visible content on the frontend.
+
+**Fixes Applied:**
+
+- **File Modified**: [backend/metacognition.py](file:///c:/proj/debateX/backend/metacognition.py)
+  - Changed `probe_model()`: temperature probes now fire **sequentially** with a 0.4s stagger (`asyncio.sleep(0.4)`) instead of in parallel. This keeps each model to 1 active request at a time.
+  - Added `MAX_PROBE_MODELS = 3` constant: only the first 3 models are probed (down from all 8), capping total metacognition calls to **9** (3 models × 3 temps, staggered).
+  - Per-model probes still run concurrently across models, so the 3 models probe in parallel — each sequential within itself.
+
+- **File Modified**: [backend/main.py](file:///c:/proj/debateX/backend/main.py)
+  - Reordered SSE stream: **stage1 now runs first** (no competition), then `meta_task = asyncio.create_task(run_metacognition(...))` is launched concurrently with the stage2 ranking calls. `metacognition_complete` is emitted after stage2 resolves. This ensures stage1 always gets a clean rate-limit window.
+
+**Net call profile (after fix):**
+
+| Phase | Simultaneous Groq calls |
+|-------|------------------------|
+| Stage 1 (8 models) | 8 |
+| Metacognition (3 models, staggered) | 3 (max at any moment: 1 per model) |
+| Total peak | 8 + 3 = 11 (acceptable) |
+
+
 ### [2026-05-22 09:57] Initial Log Setup
 - **File Created**: [debateX.md](file:///c:/proj/debateX/debateX.md)
 - **Description**: Created this file to log all future modifications, files created, and updates made during the development session as requested by the user.

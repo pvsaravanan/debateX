@@ -12,13 +12,16 @@ DebateX establishes an asynchronous deliberation council composed of multiple di
 
 ## 🧠 Pre-flight: Metacognition Probe (`backend/metacognition.py`)
 
-Runs **concurrently with Round 1** via `asyncio.create_task` — adds zero wall-clock latency.
+Runs **concurrently with Round 2** (not Round 1) — started as an `asyncio.Task` after stage1 completes, so it never competes for the same rate-limit window as the main deliberation.
+
+> **Rate-limit budget**: At most `MAX_PROBE_MODELS = 3` models are probed. Within each model, the 3 temperature calls are **staggered sequentially** (0.4s delay between them). Across the 3 models, probes run concurrently. Peak simultaneous calls = 3 (one per model). Total metacognition calls = 9.
 
 ### Process
-1. Each council model is called **3 times** at temperatures `[0.3, 0.7, 1.0]` on the same query. All `N × 3` calls fire in parallel with `asyncio.gather`.
-2. Each set of three responses is embedded using **TF-IDF cosine similarity** (no external deps — stdlib only).
-3. **Three pairwise similarities** are computed: `(T0.3↔T0.7)`, `(T0.3↔T1.0)`, `(T0.7↔T1.0)`.
-4. A **per-model confidence score** is derived from the average similarity:
+1. After stage1 finishes, a background task probes up to **3** council models.
+2. Each model is called **3 times sequentially** at temperatures `[0.3, 0.7, 1.0]` with a 0.4s stagger per step.
+3. Each set of three responses is embedded using **TF-IDF cosine similarity** (no external deps — stdlib only).
+4. **Three pairwise similarities** are computed: `(T0.3↔T0.7)`, `(T0.3↔T1.0)`, `(T0.7↔T1.0)`.
+5. A **per-model confidence score** is derived from the average similarity:
 
 | avg cosine | Tier | Confidence range |
 |---|---|---|
@@ -27,6 +30,14 @@ Runs **concurrently with Round 1** via `asyncio.create_task` — adds zero wall-
 | < 0.40 | LOW | 0.10 – 0.40 |
 
 Linear interpolation within each band maps the raw avg similarity to the exact score.
+
+### SSE stream ordering
+```
+stage1_start → stage1_complete           ← stage1 gets a clean rate-limit window
+meta_task launched (asyncio.create_task) ← concurrent with stage2
+stage2_start → stage2_complete
+metacognition_complete                   ← result arrives after stage2
+```
 
 ### Output: `MetacognitionResult`
 ```python
