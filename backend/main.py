@@ -11,6 +11,7 @@ import asyncio
 
 from . import storage
 from .debate import run_full_debate, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, stage3_revise_or_defend, stage4_challenger_critique, stage5_chairman_synthesis
+from .metacognition import run_metacognition, serialize_metacognition_result
 
 app = FastAPI(title="DebateX API")
 
@@ -183,9 +184,18 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Round 1: Collect responses
+            # Pre-flight: metacognition + Round 1 fire in parallel
+            yield f"data: {json.dumps({'type': 'metacognition_start'})}\n\n"
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
+
+            meta_task = asyncio.create_task(run_metacognition(request.content))
+            stage1_task = asyncio.create_task(stage1_collect_responses(request.content))
+
+            metacognition_result = await meta_task
+            metacognition_serialized = serialize_metacognition_result(metacognition_result)
+            yield f"data: {json.dumps({'type': 'metacognition_complete', 'data': metacognition_serialized})}\n\n"
+
+            stage1_results = await stage1_task
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
             # Round 2: Collect rankings
@@ -213,7 +223,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 stage3_results,
                 stage4_result,
                 label_to_model,
-                aggregate_rankings
+                aggregate_rankings,
+                metacognition_summary=metacognition_result.summary,
             )
             disagreement_map = stage5_result.get("disagreement_map")
             yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage5_result, 'disagreement_map': disagreement_map})}\n\n"
@@ -232,6 +243,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 "aggregate_rankings": aggregate_rankings,
                 "rounds": rounds,
                 "disagreement_map": disagreement_map,
+                "metacognition": metacognition_serialized,
             }
 
             # Wait for title generation if it was started

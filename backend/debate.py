@@ -10,6 +10,11 @@ from .disagreement import (
     parse_disagreement_map,
     serialize_disagreement_map,
 )
+from .metacognition import (
+    MetacognitionResult,
+    run_metacognition,
+    serialize_metacognition_result,
+)
 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
@@ -534,12 +539,14 @@ async def stage5_chairman_synthesis(
     stage3_results: List[Dict[str, Any]],
     challenger_result: Dict[str, Any],
     label_to_model: Dict[str, str],
-    aggregate_rankings: List[Dict[str, Any]]
+    aggregate_rankings: List[Dict[str, Any]],
+    metacognition_summary: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Stage 5: Chairman synthesizes the final response using the full deliberation history.
     Also populates a structured DisagreementMap (consensus zones, disagreement zones,
     confidence scores) for the DisagreementPanel UI component.
+    When metacognition_summary is provided it is injected as model confidence weights.
     """
     # Compile the deliberation history array
     deliberation_history = [
@@ -600,6 +607,15 @@ async def stage5_chairman_synthesis(
         for r in stage3_results
     ])
 
+    # Build metacognition weight block for Chairman prompt
+    if metacognition_summary:
+        metacognition_block = (
+            "PRE-DELIBERATION METACOGNITION SCORES (self-consistency across temperatures):\n"
+            + metacognition_summary
+        )
+    else:
+        metacognition_block = ""
+
     chairman_prompt = f"""You are the Chairman/Moderator of a 5-round LLM deliberation council.
 
 The council has debated the following question:
@@ -633,6 +649,8 @@ Your task as Chairman is to synthesize the entire history of this deliberation. 
 3. Address the Challenger's critique: either incorporate its valid concerns to strengthen the final answer, or explain why the critique is addressed or invalid.
 4. Synthesize all insights into a single, comprehensive, highly authoritative, and definitive master answer to the user's original question.
 5. Identify points of CONSENSUS (all models agreed) and points of DISAGREEMENT (models diverged), then populate the structured JSON block described below.
+
+{metacognition_block}
 
 CRITICAL: You MUST write your final synthesis response strictly in English.
 
@@ -691,16 +709,19 @@ Provide your definitive final synthesized response followed by the JSON block:""
 
 async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
     """
-    Run the complete 5-round debate process.
-
-    Args:
-        user_query: The user's question
+    Run the complete 5-round debate process with metacognition pre-flight.
 
     Returns:
         Tuple of (stage1_results, stage2_results, stage5_result, metadata)
     """
-    # Stage 1: Collect individual responses
-    stage1_results = await stage1_collect_responses(user_query)
+    import asyncio as _asyncio
+
+    # ── Pre-flight: metacognition + stage1 fire concurrently ──────────────
+    meta_task = _asyncio.create_task(run_metacognition(user_query))
+    stage1_task = _asyncio.create_task(stage1_collect_responses(user_query))
+
+    metacognition_result: MetacognitionResult = await meta_task
+    stage1_results: List[Dict[str, Any]] = await stage1_task
 
     # If no models responded successfully, return error
     if not stage1_results:
@@ -731,7 +752,7 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
         aggregate_rankings
     )
 
-    # Stage 5: Chairman Synthesis
+    # Stage 5: Chairman Synthesis (with metacognition weights)
     stage5_result = await stage5_chairman_synthesis(
         user_query,
         stage1_results,
@@ -739,7 +760,8 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
         stage3_results,
         stage4_result,
         label_to_model,
-        aggregate_rankings
+        aggregate_rankings,
+        metacognition_summary=metacognition_result.summary,
     )
 
     # Compile the detailed rounds list
@@ -751,16 +773,13 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
         {"round": 5, "type": "chairman_synthesis", "data": stage5_result}
     ]
 
-    # Prepare metadata (keep label_to_model and aggregate_rankings for backwards compatibility)
+    # Prepare metadata
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "rounds": rounds,
         "disagreement_map": stage5_result.get("disagreement_map"),
+        "metacognition": serialize_metacognition_result(metacognition_result),
     }
 
-    # For legacy backwards-compatibility:
-    # stage1_results matches Round 1
-    # stage2_results matches Round 2
-    # stage3_result matches Round 5
     return stage1_results, stage2_results, stage5_result, metadata
