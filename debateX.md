@@ -63,6 +63,11 @@ This file records all changes made to the DebateX codebase starting from May 22,
 - **File Created**: [openspec/changes/archive/2026-05-24-prefer-groq-moderator/](file:///c:/proj/debateX/openspec/changes/archive)
   - Created and archived the prefer-groq-moderator change proposal.
 
-
-
-
+### [2026-05-24 11:28] Groq Models Update & Pricing Calibration
+- **File Modified**: [backend/config.py](file:///c:/proj/debateX/backend/config.py)
+  - Updated Groq models list to: `llama-3.1-8b-instant`, `openai/gpt-oss-120b`, `qwen/qwen3-32b`, and `llama-3.3-70b-versatile` as requested by the user.
+- **File Modified**: [backend/router.py](file:///c:/proj/debateX/backend/router.py)
+  - Updated pricing metrics table to include `groq/openai/gpt-oss-120b` (input: $0.15/1M, output: $0.60/1M) and `groq/qwen/qwen3-32b` (input: $0.29/1M, output: $0.59/1M) using real-world GroqCloud parameters.
+  - Refined cognitive category routing rules to map `gpt-oss` and `qwen` models as target council selectors for technical, creative, factual, ethical, and mathematical queries.
+- **File Modified**: [tests/test_router.py](file:///c:/proj/debateX/tests/test_router.py)
+  - Updated mock test model list to reflect the new set of models.
