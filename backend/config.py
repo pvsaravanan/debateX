@@ -28,10 +28,10 @@ if OPENROUTER_API_KEY:
 
 if GROQ_API_KEY:
     debate_MODELS.extend([
-        "groq/llama-3.3-70b-versatile",
         "groq/llama-3.1-8b-instant",
-        "groq/mixtral-8x7b-32768",
-        "groq/gemma2-9b-it",
+        "groq/openai/gpt-oss-120b",
+        "groq/qwen/qwen3-32b",
+        "groq/llama-3.3-70b-versatile",
     ])
     # Prioritize Groq's high-performance model as the moderator
     moderator_MODEL = "groq/llama-3.3-70b-versatile"

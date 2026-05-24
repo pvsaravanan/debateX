@@ -19,8 +19,8 @@ class QueryRouting:
 PRICING_TABLE = {
     "groq/llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
     "groq/llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
-    "groq/mixtral-8x7b-32768": {"input": 0.24, "output": 0.24},
-    "groq/gemma2-9b-it": {"input": 0.20, "output": 0.22},
+    "groq/openai/gpt-oss-120b": {"input": 0.15, "output": 0.60},
+    "groq/qwen/qwen3-32b": {"input": 0.29, "output": 0.59},
     "deepseek/deepseek-v4-flash:free": {"input": 0.0, "output": 0.0},
     "z-ai/glm-4.5-air:free": {"input": 0.0, "output": 0.0},
     "liquid/lfm-2.5-1.2b-instruct:free": {"input": 0.0, "output": 0.0},
@@ -193,7 +193,7 @@ async def route_query(
         # Coding & Reasoning models
         optimal_council = [
             m for m in available_models
-            if "llama-3.3" in m or "llama-3.1" in m or "gemma2" in m or "deepseek" in m
+            if "llama-3.3" in m or "llama-3.1" in m or "gpt-oss" in m or "qwen" in m or "deepseek" in m
         ]
     elif category == "creative":
         disagreement_panel_mandatory = False
@@ -201,7 +201,7 @@ async def route_query(
         # Context-rich & Diverse models
         optimal_council = [
             m for m in available_models
-            if "mixtral" in m or "gemma2" in m or "glm-4.5" in m
+            if "gpt-oss" in m or "qwen" in m or "glm-4.5" in m
         ]
     elif category == "factual/research":
         disagreement_panel_mandatory = True
@@ -209,7 +209,7 @@ async def route_query(
         # Comprehensive & Precision models
         optimal_council = [
             m for m in available_models
-            if "llama-3.3" in m or "mixtral" in m or "deepseek" in m
+            if "llama-3.3" in m or "qwen" in m or "gpt-oss" in m or "deepseek" in m
         ]
     elif category == "ethical/philosophical":
         disagreement_panel_mandatory = False
@@ -217,7 +217,7 @@ async def route_query(
         # Highly articulate & Reasoning models
         optimal_council = [
             m for m in available_models
-            if "mixtral" in m or "llama-3.3" in m or "glm-4.5" in m
+            if "gpt-oss" in m or "llama-3.3" in m or "glm-4.5" in m
         ]
     elif category == "math/logic":
         disagreement_panel_mandatory = True
@@ -225,7 +225,7 @@ async def route_query(
         # Reasoning & proof-capable models
         optimal_council = [
             m for m in available_models
-            if "llama-3.3" in m or "deepseek" in m or "llama-3.1" in m
+            if "llama-3.3" in m or "deepseek" in m or "llama-3.1" in m or "qwen" in m
         ]
 
     # Graceful fallback: if no optimal models match, use the first 3 available models
