@@ -1,8 +1,15 @@
 """3-stage DebateX orchestration."""
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from .llm import query_models_parallel, query_model
 from .config import debate_MODELS, moderator_MODEL
+from .disagreement import (
+    CHAIRMAN_DISAGREEMENT_SCHEMA,
+    DisagreementMap,
+    build_disagreement_map_heuristic,
+    parse_disagreement_map,
+    serialize_disagreement_map,
+)
 
 
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
@@ -531,6 +538,8 @@ async def stage5_chairman_synthesis(
 ) -> Dict[str, Any]:
     """
     Stage 5: Chairman synthesizes the final response using the full deliberation history.
+    Also populates a structured DisagreementMap (consensus zones, disagreement zones,
+    confidence scores) for the DisagreementPanel UI component.
     """
     # Compile the deliberation history array
     deliberation_history = [
@@ -623,10 +632,13 @@ Your task as Chairman is to synthesize the entire history of this deliberation. 
 2. Weigh the peer rankings and evaluations carefully.
 3. Address the Challenger's critique: either incorporate its valid concerns to strengthen the final answer, or explain why the critique is addressed or invalid.
 4. Synthesize all insights into a single, comprehensive, highly authoritative, and definitive master answer to the user's original question.
+5. Identify points of CONSENSUS (all models agreed) and points of DISAGREEMENT (models diverged), then populate the structured JSON block described below.
 
 CRITICAL: You MUST write your final synthesis response strictly in English.
 
-Provide your definitive final synthesized response:"""
+{CHAIRMAN_DISAGREEMENT_SCHEMA}
+
+Provide your definitive final synthesized response followed by the JSON block:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
 
@@ -660,9 +672,20 @@ Provide your definitive final synthesized response:"""
             "response": leading_response
         }
 
+    # --- Parse / build the DisagreementMap ---
+    dm: Optional[DisagreementMap] = parse_disagreement_map(content)
+    if dm is None:
+        # LLM did not emit the JSON block → fall back to heuristic analysis
+        dm = build_disagreement_map_heuristic(stage1_results, stage3_results, aggregate_rankings)
+
+    # Strip the JSON fence from the narrative response so the UI gets clean text
+    import re as _re
+    clean_content = _re.sub(r'```(?:json)?\s*\{[\s\S]*?\}\s*```', '', content).strip()
+
     return {
         "model": moderator_MODEL,
-        "response": content
+        "response": clean_content,
+        "disagreement_map": serialize_disagreement_map(dm),
     }
 
 
@@ -732,7 +755,8 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
     metadata = {
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
-        "rounds": rounds
+        "rounds": rounds,
+        "disagreement_map": stage5_result.get("disagreement_map"),
     }
 
     # For legacy backwards-compatibility:

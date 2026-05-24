@@ -215,7 +215,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 label_to_model,
                 aggregate_rankings
             )
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage5_result})}\n\n"
+            disagreement_map = stage5_result.get("disagreement_map")
+            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage5_result, 'disagreement_map': disagreement_map})}\n\n"
 
             # Compile new rounds list
             rounds = [
@@ -229,7 +230,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             metadata = {
                 "label_to_model": label_to_model,
                 "aggregate_rankings": aggregate_rankings,
-                "rounds": rounds
+                "rounds": rounds,
+                "disagreement_map": disagreement_map,
             }
 
             # Wait for title generation if it was started
