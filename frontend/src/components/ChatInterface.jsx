@@ -5,6 +5,7 @@ import Stage2 from './Stage2';
 import Round3 from './Round3';
 import Round4 from './Round4';
 import Stage3 from './Stage3';
+import DisagreementPanel from './DisagreementPanel';
 import './ChatInterface.css';
 
 const BattleIcon = () => (
@@ -105,6 +106,10 @@ export default function ChatInterface({
 
                         {msg.loading?.stage3 && <div className="loading-stage">Stage 3: Generating final answer...</div>}
                         {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
+
+                        {msg.disagreement_map && (
+                          <DisagreementPanel disagreementMap={msg.disagreement_map} />
+                        )}
 
                         {msg.error && (
                           <div className="error-panel">

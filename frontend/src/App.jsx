@@ -93,6 +93,7 @@ function App() {
         round3: null,
         round4: null,
         stage3: null,
+        disagreement_map: null,
         metadata: null,
         loading: { stage1: false, stage2: false, round3: false, round4: false, stage3: false },
       };
@@ -132,7 +133,11 @@ function App() {
             updateLastMessage((m) => { m.loading.stage3 = true; });
             break;
           case 'stage3_complete':
-            updateLastMessage((m) => { m.stage3 = event.data; m.loading.stage3 = false; });
+            updateLastMessage((m) => { 
+              m.stage3 = event.data; 
+              m.disagreement_map = event.disagreement_map || null;
+              m.loading.stage3 = false; 
+            });
             break;
           case 'title_complete':
             const newTitle = event.data.title;
