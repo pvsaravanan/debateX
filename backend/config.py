@@ -28,14 +28,13 @@ if OPENROUTER_API_KEY:
 
 if GROQ_API_KEY:
     debate_MODELS.extend([
-        "groq/llama3-8b-8192",
-        "groq/llama3-70b-8192",
+        "groq/llama-3.3-70b-versatile",
+        "groq/llama-3.1-8b-instant",
         "groq/mixtral-8x7b-32768",
-        "groq/gemma-7b-it",
+        "groq/gemma2-9b-it",
     ])
-    # If moderator isn't set yet, or we want Groq to be the fallback
-    if not moderator_MODEL:
-        moderator_MODEL = "groq/llama3-70b-8192"
+    # Prioritize Groq's high-performance model as the moderator
+    moderator_MODEL = "groq/llama-3.3-70b-versatile"
 
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
