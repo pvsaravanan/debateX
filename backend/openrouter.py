@@ -7,7 +7,8 @@ from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
 async def query_openrouter(
     model: str,
     messages: List[Dict[str, str]],
-    timeout: float = 120.0
+    timeout: float = 120.0,
+    temperature: float = 0.7,
 ) -> Optional[Dict[str, Any]]:
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -17,6 +18,7 @@ async def query_openrouter(
     payload = {
         "model": model,
         "messages": messages,
+        "temperature": temperature,
     }
 
     try:

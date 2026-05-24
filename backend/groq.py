@@ -7,7 +7,8 @@ from .config import GROQ_API_KEY, GROQ_API_URL
 async def query_groq(
     model: str,
     messages: List[Dict[str, str]],
-    timeout: float = 120.0
+    timeout: float = 120.0,
+    temperature: float = 0.7,
 ) -> Optional[Dict[str, Any]]:
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -17,6 +18,7 @@ async def query_groq(
     payload = {
         "model": model,
         "messages": messages,
+        "temperature": temperature,
     }
 
     try:
