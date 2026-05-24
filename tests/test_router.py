@@ -10,10 +10,10 @@ from backend.router import (
 class TestRouter(unittest.TestCase):
     def setUp(self):
         self.available_models = [
-            "groq/llama-3.3-70b-versatile",
             "groq/llama-3.1-8b-instant",
-            "groq/mixtral-8x7b-32768",
-            "groq/gemma2-9b-it",
+            "groq/openai/gpt-oss-120b",
+            "groq/qwen/qwen3-32b",
+            "groq/llama-3.3-70b-versatile",
             "deepseek/deepseek-v4-flash:free",
             "z-ai/glm-4.5-air:free",
         ]
