@@ -85,7 +85,9 @@ The endpoint yields lines starting with `data: ` containing serialized JSON obje
 
 | Event `type` | Payload Keys / Format | Description |
 | :--- | :--- | :--- |
-| `stage1_start` | `{}` | Emitted when council starts generating initial responses. |
+| `metacognition_start` | `{}` | Emitted when the pre-flight consistency probe begins (fires simultaneously with `stage1_start`). |
+| `metacognition_complete` | `{"data": MetacognitionResult}` | Emitted with the full per-model confidence scores, pairwise similarities, and tier assignments. See `MetacognitionResult` schema below. |
+| `stage1_start` | `{}` | Emitted when council starts generating initial responses (concurrent with metacognition). |
 | `stage1_complete` | `{"data": [...]}` | Array of `{"model": "name", "response": "..."}` objects representing successful Round 1 answers. |
 | `stage2_start` | `{}` | Emitted when peer evaluations and ranking begins. |
 | `stage2_complete` | `{"data": [...], "metadata": {"label_to_model": {...}, "aggregate_rankings": [...]}}` | Emitted with evaluation reviews, the de-anonymization mapping dictionary, and sorted list of average rankings. |
@@ -94,7 +96,68 @@ The endpoint yields lines starting with `data: ` containing serialized JSON obje
 | `round4_start` | `{}` | Emitted when Challenger model begins critique. |
 | `round4_complete` | `{"data": {...}}` | Emitted with the challenger critique object pointing out the weakest spots of the leading answer. |
 | `stage3_start` | `{}` | Emitted when Chairman starts master synthesis. |
-| `stage3_complete` | `{"data": {"model": "name", "response": "..."}}` | Emitted with final synthesized master answer from the Chairman model. |
-| `title_complete` | `{"data": {"title": "Generated Title"}}` | Emitted when a short conversation title is successfully generated in the background (emitted only on first message). |
-| `complete` | `{}` | Sent when processing completes successfully and conversation has been saved to storage. |
-| `error` | `{"message": "error reason"}` | Sent if a fatal exception occurs (e.g. invalid API key, credit exhaustion). Closes stream. |
+| `stage3_complete` | `{"data": ChairmanResult, "disagreement_map": DisagreementMap}` | Emitted with final synthesized answer. Includes structured `disagreement_map` (consensus zones, divergence details, confidence map). See schemas below. |
+| `title_complete` | `{"data": {"title": "Generated Title"}}` | Emitted when a short conversation title is successfully generated (first message only). |
+| `complete` | `{}` | Sent when processing completes and conversation is saved to storage. |
+| `error` | `{"message": "error reason"}` | Sent if a fatal exception occurs. Closes stream. |
+
+---
+
+## 📦 Key Payload Schemas
+
+### `MetacognitionResult`
+```json
+{
+  "scores": {
+    "groq/llama-3.3-70b-versatile": {
+      "model": "groq/llama-3.3-70b-versatile",
+      "confidence": 0.91,
+      "tier": "HIGH",
+      "sim_01": 0.88,
+      "sim_02": 0.85,
+      "sim_12": 0.90,
+      "avg_similarity": 0.876,
+      "probes": [
+        { "temperature": 0.3, "response": "..." },
+        { "temperature": 0.7, "response": "..." },
+        { "temperature": 1.0, "response": "..." }
+      ]
+    }
+  },
+  "summary": "Model confidence weights (derived from self-consistency probing):\n  ..."
+}
+```
+
+### `DisagreementMap` (inside `stage3_complete`)
+```json
+{
+  "consensus_points": ["Both models agreed X is correct", "..."],
+  "disagreement_zones": [
+    {
+      "claim": "Whether Y approach is optimal",
+      "positions": {
+        "model-A": "Y is optimal because ...",
+        "model-B": "Y has limitations due to ..."
+      },
+      "divergence_reason": "Different assumptions about scale",
+      "human_review_needed": true
+    }
+  ],
+  "confidence_map": [
+    {
+      "claim": "X is correct",
+      "model_scores": { "model-A": 0.95, "model-B": 0.88 }
+    }
+  ],
+  "overall_consensus_score": 0.72
+}
+```
+
+### `ChairmanResult` (inside `stage3_complete.data`)
+```json
+{
+  "model": "groq/llama-3.3-70b-versatile",
+  "response": "Final synthesized narrative (JSON block stripped out)",
+  "disagreement_map": { ... }
+}
+```
