@@ -20,7 +20,7 @@ export default function Round3({ results }) {
 
       <div className="tabs">
         {results.map((res, index) => {
-          const modelShort = res.model.split('/')[1] || res.model;
+          const modelShort = (res.model.split('/').pop() || res.model).replace(/:free$/, '');
           const decision = res.decision || 'REVISE';
           return (
             <button

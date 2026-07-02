@@ -19,6 +19,10 @@ function App() {
   // Load conversation details when selected
   useEffect(() => {
     if (currentConversationId) {
+      // Prevent fetching and overwriting optimistic UI updates for newly created conversations
+      if (currentConversation && currentConversation.id === currentConversationId) {
+        return;
+      }
       loadConversation(currentConversationId);
     }
   }, [currentConversationId]);
@@ -96,7 +100,7 @@ function App() {
         disagreement_map: null,
         metacognition: null,
         metadata: null,
-        loading: { metacognition: false, stage1: false, stage2: false, round3: false, round4: false, stage3: false },
+        loading: { metacognition: false, stage1: false, stage2: false, round3: false, round4: false, round5: false },
       };
 
       setCurrentConversation((prev) => ({
@@ -136,14 +140,14 @@ function App() {
           case 'round4_complete':
             updateLastMessage((m) => { m.round4 = event.data; m.loading.round4 = false; });
             break;
-          case 'stage3_start':
-            updateLastMessage((m) => { m.loading.stage3 = true; });
+          case 'round5_start':
+            updateLastMessage((m) => { m.loading.round5 = true; });
             break;
-          case 'stage3_complete':
+          case 'round5_complete':
             updateLastMessage((m) => { 
               m.stage3 = event.data; 
               m.disagreement_map = event.disagreement_map || null;
-              m.loading.stage3 = false; 
+              m.loading.round5 = false; 
             });
             break;
           case 'title_complete':
@@ -167,7 +171,7 @@ function App() {
               m.loading.stage2 = false;
               m.loading.round3 = false;
               m.loading.round4 = false;
-              m.loading.stage3 = false;
+              m.loading.round5 = false;
             });
             setIsLoading(false);
             break;

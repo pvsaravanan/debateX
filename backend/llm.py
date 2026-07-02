@@ -37,12 +37,12 @@ async def query_models_parallel(
     # Wait for all to complete
     responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Check if any exception is a rate limit or credit error, and propagate it immediately
+    # Log rate limits instead of crashing the entire debate
     for resp in responses:
         if isinstance(resp, Exception):
             err_str = str(resp)
             if "Rate limit" in err_str or "credits" in err_str or "429" in err_str or "402" in err_str:
-                raise resp
+                print(f"Warning: A model hit a rate limit or credit issue: {err_str}")
 
     # Map models to their responses (converting other exceptions to None)
     mapped_responses = {}

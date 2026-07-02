@@ -9,14 +9,6 @@ import DisagreementPanel from './DisagreementPanel';
 import ConfidenceHeatmap from './ConfidenceHeatmap';
 import './ChatInterface.css';
 
-const BattleIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
-    <path d="m13 19 6 3 3-6-3-6-6 3" />
-    <path d="M8 16 3 21" />
-    <path d="m18 8 3-3" />
-  </svg>
-);
 
 
 
@@ -108,7 +100,7 @@ export default function ChatInterface({
                         {msg.loading?.round4 && <div className="loading-stage">Round 4: Challenger identifying weak points...</div>}
                         {round4 && <Round4 result={round4} labelToModel={msg.metadata?.label_to_model} />}
 
-                        {msg.loading?.stage3 && <div className="loading-stage">Stage 3: Generating final answer...</div>}
+                        {msg.loading?.round5 && <div className="loading-stage">Round 5: Chairman synthesizing final answer...</div>}
                         {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
 
                         {msg.disagreement_map && (

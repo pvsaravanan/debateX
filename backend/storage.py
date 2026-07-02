@@ -2,11 +2,15 @@
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR
 
+# WARNING: This simple JSON file storage is NOT thread-safe.
+# Concurrent requests reading/writing to the same conversation file can cause 
+# data loss due to race conditions in the read-modify-write pattern.
+# For production, this should be replaced with a database or use proper file locking (e.g. fcntl/msvcrt).
 
 def ensure_data_dir():
     """Ensure the data directory exists."""
@@ -32,7 +36,7 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
 
     conversation = {
         "id": conversation_id,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "title": "New Conversation",
         "messages": []
     }

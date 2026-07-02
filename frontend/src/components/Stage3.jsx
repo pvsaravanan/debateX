@@ -12,7 +12,7 @@ export default function Stage3({ finalResponse }) {
       <h3 className="stage-title">Stage 3: Final debate Answer</h3>
       <div className="final-response">
         <div className="moderator-label">
-          moderator: {finalResponse.model.split('/')[1] || finalResponse.model}
+          moderator: {(finalResponse.model.split('/').pop() || finalResponse.model).replace(/:free$/, '')}
         </div>
         <div className="final-text markdown-content">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{finalResponse.response}</ReactMarkdown>

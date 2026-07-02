@@ -17,14 +17,16 @@ class QueryRouting:
 
 # Pricing Table in USD per 1 Million (1M) tokens
 PRICING_TABLE = {
+    # Groq Models
     "groq/llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
     "groq/llama-3.1-8b-instant": {"input": 0.05, "output": 0.08},
-    "groq/openai/gpt-oss-120b": {"input": 0.15, "output": 0.60},
-    "groq/qwen/qwen3-32b": {"input": 0.29, "output": 0.59},
-    "deepseek/deepseek-v4-flash:free": {"input": 0.0, "output": 0.0},
-    "z-ai/glm-4.5-air:free": {"input": 0.0, "output": 0.0},
-    "liquid/lfm-2.5-1.2b-instruct:free": {"input": 0.0, "output": 0.0},
-    "nvidia/nemotron-3-nano-30b-a3b:free": {"input": 0.0, "output": 0.0},
+    "groq/openai/gpt-oss-20b": {"input": 0.15, "output": 0.60},
+    
+    # OpenRouter Free Models
+    "nvidia/nemotron-3-ultra-550b-a55b:free": {"input": 0.0, "output": 0.0},
+    "poolside/laguna-m.1:free": {"input": 0.0, "output": 0.0},
+    "google/gemma-4-31b-it:free": {"input": 0.0, "output": 0.0},
+    "poolside/laguna-xs-2.1:free": {"input": 0.0, "output": 0.0},
 }
 
 

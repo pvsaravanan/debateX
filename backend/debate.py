@@ -323,14 +323,7 @@ async def generate_conversation_title(user_query: str) -> str:
         except Exception as e:
             print(f"Failed to query title with moderator model: {e}")
 
-    # 2. Try with nvidia/nemotron-3-nano-30b-a3b:free next
-    if response is None:
-        try:
-            response = await query_model("nvidia/nemotron-3-nano-30b-a3b:free", messages, timeout=15.0)
-        except Exception:
-            pass
-
-    # 3. Try with any of the debate_MODELS
+    # 2. Try with any of the debate_MODELS
     if response is None:
         for model in debate_MODELS:
             try:

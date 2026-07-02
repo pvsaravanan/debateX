@@ -19,18 +19,17 @@ moderator_MODEL = ""
 
 if OPENROUTER_API_KEY:
     debate_MODELS.extend([
-        "deepseek/deepseek-v4-flash:free",
-        "z-ai/glm-4.5-air:free",
-        "liquid/lfm-2.5-1.2b-instruct:free",
-        "nvidia/nemotron-3-nano-30b-a3b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "poolside/laguna-m.1:free",
+        "google/gemma-4-31b-it:free",
+        "poolside/laguna-xs-2.1:free"
     ])
-    moderator_MODEL = "deepseek/deepseek-v4-flash:free"
+    moderator_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 if GROQ_API_KEY:
     debate_MODELS.extend([
         "groq/llama-3.1-8b-instant",
-        "groq/openai/gpt-oss-120b",
-        "groq/qwen/qwen3-32b",
+        "groq/openai/gpt-oss-20b",
         "groq/llama-3.3-70b-versatile",
     ])
     # Prioritize Groq's high-performance model as the moderator

@@ -42,8 +42,8 @@ export default function Round4({ result, labelToModel }) {
     return null;
   }
 
-  const challengerShort = result.model.split('/')[1] || result.model;
-  const targetShort = result.target_model ? (result.target_model.split('/')[1] || result.target_model) : 'Target Model';
+  const challengerShort = (result.model.split('/').pop() || result.model).replace(/:free$/, '');
+  const targetShort = result.target_model ? (result.target_model.split('/').pop() || result.target_model).replace(/:free$/, '') : 'Target Model';
 
   return (
     <div className="stage round4">

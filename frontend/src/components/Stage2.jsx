@@ -9,7 +9,7 @@ function deAnonymizeText(text, labelToModel) {
   let result = text;
   // Replace each "Response X" with the actual model name
   Object.entries(labelToModel).forEach(([label, model]) => {
-    const modelShortName = model.split('/')[1] || model;
+    const modelShortName = (model.split('/').pop() || model).replace(/:free$/, '');
     result = result.replace(new RegExp(label, 'g'), `**${modelShortName}**`);
   });
   return result;
@@ -39,7 +39,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
             className={`tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
-            {rank.model.split('/')[1] || rank.model}
+            {(rank.model.split('/').pop() || rank.model).replace(/:free$/, '')}
           </button>
         ))}
       </div>
@@ -56,15 +56,15 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
 
         {rankings[activeTab].parsed_ranking &&
          rankings[activeTab].parsed_ranking.length > 0 && (
-          <div className="parsed-ranking mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-            <h4 className="text-cyan-400 mb-3 text-sm font-semibold uppercase tracking-wider">Extracted Ranking:</h4>
-            <div className="space-y-2 text-gray-300">
+          <div className="parsed-ranking">
+            <h4 className="parsed-ranking-title">Extracted Ranking:</h4>
+            <div className="parsed-ranking-list">
               {rankings[activeTab].parsed_ranking.map((label, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="font-mono text-gray-400 shrink-0">{i + 1}.</span>
+                <div key={i} className="parsed-ranking-item">
+                  <span className="parsed-rank-number">{i + 1}.</span>
                   <span>
                     {labelToModel && labelToModel[label]
-                      ? labelToModel[label].split('/')[1] || labelToModel[label]
+                      ? (labelToModel[label].split('/').pop() || labelToModel[label]).replace(/:free$/, '')
                       : label}
                   </span>
                 </div>
@@ -85,7 +85,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
               <div key={index} className="aggregate-item">
                 <span className="rank-position">#{index + 1}</span>
                 <span className="rank-model">
-                  {agg.model.split('/')[1] || agg.model}
+                  {(agg.model.split('/').pop() || agg.model).replace(/:free$/, '')}
                 </span>
                 <span className="rank-score">
                   Avg: {agg.average_rank.toFixed(2)}

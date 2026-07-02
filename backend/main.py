@@ -18,7 +18,7 @@ app = FastAPI(title="DebateX API")
 # Enable CORS for local development - MUST be added before other middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -210,7 +210,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             yield f"data: {json.dumps({'type': 'round4_complete', 'data': stage4_result})}\n\n"
 
             # Round 5: Chairman Synthesis
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+            yield f"data: {json.dumps({'type': 'round5_start'})}\n\n"
             stage5_result = await stage5_chairman_synthesis(
                 request.content,
                 stage1_results,
@@ -219,10 +219,10 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 stage4_result,
                 label_to_model,
                 aggregate_rankings,
-                metacognition_summary=metacognition_result.summary,
+                metacognition_summary=None,
             )
             disagreement_map = stage5_result.get("disagreement_map")
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage5_result, 'disagreement_map': disagreement_map})}\n\n"
+            yield f"data: {json.dumps({'type': 'round5_complete', 'data': stage5_result, 'disagreement_map': disagreement_map})}\n\n"
 
             # Compile new rounds list
             rounds = [
