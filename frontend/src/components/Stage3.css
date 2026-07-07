@@ -3,9 +3,49 @@
   border: 1px solid rgba(34, 211, 238, 0.2);
   padding: 24px;
   border-radius: 12px;
-  margin-top: 32px;
+  margin-top: 24px;
+  animation: fadeIn 0.35s ease-out;
+}
+
+.stage3-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .stage3 .stage-title {
   color: var(--accent-cyan);
+  margin: 0;
+}
+
+.chairman-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* Blinking caret at the end of the text while the answer streams in */
+.final-text.is-typing > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  background-color: var(--accent-cyan);
+  border-radius: 1px;
+  animation: caret-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  to { visibility: hidden; }
 }

@@ -1,0 +1,143 @@
+/* ── DeliberationTrace.css ──────────────────────────────────────────────────
+   ChatGPT/Claude-style "thinking" strip: a collapsible card that shows a
+   shimmering live status + progress bar while the debate streams, and a
+   one-line summary ("Deliberated with N models…") once it finishes.
+   Matches the flat stage-card language: --bg-secondary, 12px radius,
+   thin borders, cyan accents. */
+
+.trace {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  animation: fadeIn 0.3s ease-out;
+  transition: border-color 0.3s ease;
+}
+
+.trace--streaming {
+  border-color: rgba(34, 211, 238, 0.25);
+}
+
+/* ── Header row ─────────────────────────────────────────────────────────── */
+
+.trace-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.trace-header:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.trace-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.trace-icon--pulse {
+  color: var(--accent-cyan);
+  background: rgba(34, 211, 238, 0.1);
+  animation: trace-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes trace-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); }
+}
+
+.trace-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ChatGPT-style shimmering status text */
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--text-secondary) 35%,
+    #ffffff 50%,
+    var(--text-secondary) 65%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer-sweep 2.2s linear infinite;
+}
+
+@keyframes shimmer-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.trace-toggle-hint {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.trace--streaming .trace-toggle-hint {
+  color: var(--accent-cyan);
+  opacity: 1;
+}
+
+/* ── Progress bar ───────────────────────────────────────────────────────── */
+
+.trace-progress {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.trace-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+  transition: width 0.6s ease;
+  animation: progress-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes progress-glow {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+
+/* ── Expanded body ──────────────────────────────────────────────────────── */
+
+.trace-body {
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--border-color);
+  animation: trace-expand 0.25s ease-out;
+}
+
+@keyframes trace-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Stage cards inside the trace are secondary — tighten their spacing */
+.trace-body .stage {
+  margin: 16px 0;
+}

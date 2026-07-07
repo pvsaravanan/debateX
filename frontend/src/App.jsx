@@ -101,7 +101,9 @@ function App() {
         disagreement_map: null,
         metacognition: null,
         metadata: null,
-        loading: { routing: false, metacognition: false, round1: false, round2: false, round3: false, round4: false, round5: false },
+        // routing starts true so the thinking indicator appears the instant
+        // the message is sent, before the first SSE event arrives
+        loading: { routing: true, metacognition: false, round1: false, round2: false, round3: false, round4: false, round5: false },
       };
 
       setCurrentConversation((prev) => ({
@@ -185,6 +187,17 @@ function App() {
       });
     } catch (error) {
       console.error('Failed to send message:', error);
+      setCurrentConversation((prev) => {
+        if (!prev?.messages?.length) return prev;
+        const messages = [...prev.messages];
+        const lastMsg = { ...messages[messages.length - 1] };
+        if (lastMsg.role === 'assistant') {
+          lastMsg.error = error?.message || 'Failed to reach the backend. Is it running on port 8001?';
+          lastMsg.loading = Object.fromEntries(Object.keys(lastMsg.loading || {}).map((k) => [k, false]));
+          messages[messages.length - 1] = lastMsg;
+        }
+        return { ...prev, messages };
+      });
       setIsLoading(false);
     }
   };

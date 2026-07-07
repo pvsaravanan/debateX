@@ -45,6 +45,53 @@
   letter-spacing: -0.02em;
 }
 
+.hero-subtitle {
+  margin-top: 16px;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.suggestion-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 32px;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.suggestion-chip:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(34, 211, 238, 0.4);
+  background-color: var(--bg-tertiary);
+  transform: translateY(-1px);
+}
+
+.suggestion-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chip-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .highlight {
   background-color: var(--accent-cyan);
   color: #000;
@@ -98,8 +145,15 @@
   font-family: inherit;
   resize: none;
   min-height: 48px;
+  max-height: 200px;
+  overflow-y: auto;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.input-box:focus-within {
+  border-color: rgba(34, 211, 238, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(34, 211, 238, 0.1);
 }
 
 .input-footer {
@@ -125,6 +179,11 @@
   opacity: 1;
 }
 
+.send-btn.active:hover {
+  background-color: var(--accent-blue);
+  transform: scale(1.05);
+}
+
 .disclaimer {
   text-align: center;
   font-size: 0.75rem;
@@ -136,6 +195,12 @@
 /* Messages styling */
 .message-group {
   margin-bottom: 32px;
+  animation: message-in 0.35s ease-out;
+}
+
+@keyframes message-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .user-bubble {
@@ -147,6 +212,11 @@
   display: inline-block;
   max-width: 85%;
   margin-left: auto;
+}
+
+/* Every panel that appears inside an assistant turn slides in */
+.assistant-stages > * {
+  animation: fadeIn 0.35s ease-out;
 }
 
 .message-group.user {
@@ -182,12 +252,6 @@
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.3; transform: scale(0.85); }
   50%      { opacity: 1;   transform: scale(1); }
-}
-
-.loading-global {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  padding: 8px 0;
 }
 
 /* Premium Error Panel */

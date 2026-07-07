@@ -1,17 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import Stage1 from './Stage1';
-import Stage2 from './Stage2';
-import Round3 from './Round3';
-import Round4 from './Round4';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Stage3 from './Stage3';
-import RoutingPanel from './RoutingPanel';
+import DeliberationTrace from './DeliberationTrace';
 import DisagreementPanel from './DisagreementPanel';
-import ConfidenceHeatmap from './ConfidenceHeatmap';
 import './ChatInterface.css';
-
-
-
 
 const SendIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -20,6 +11,13 @@ const SendIcon = () => (
   </svg>
 );
 
+const SUGGESTIONS = [
+  { icon: '⚖️', text: 'Is it ever ethical to lie to protect someone?' },
+  { icon: '🧠', text: 'Will AGI arrive before 2030? Argue both sides.' },
+  { icon: '🔬', text: 'Is nuclear the best path to clean energy?' },
+  { icon: '💻', text: 'Monolith or microservices for a new startup?' },
+];
+
 export default function ChatInterface({
   conversation,
   onSendMessage,
@@ -27,26 +25,52 @@ export default function ChatInterface({
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
+  const scrollAreaRef = useRef(null);
+  const textareaRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const isNearBottom = () => {
+    const el = scrollAreaRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   };
+
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
+  // Follow the stream only while the reader is already at the bottom,
+  // so scrolling up to inspect earlier rounds isn't fought by autoscroll.
+  const followStream = useCallback(() => {
+    if (isNearBottom()) scrollToBottom('auto');
+  }, [scrollToBottom]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [conversation]);
+  }, [conversation, scrollToBottom]);
 
   // Reset input when switching conversations
   useEffect(() => {
     setInput('');
   }, [conversation?.id]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (input.trim() && !isLoading) {
-      onSendMessage(input);
+  // Auto-grow the textarea with its content, capped at ~6 lines
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input]);
+
+  const submitMessage = (text) => {
+    if (text.trim() && !isLoading) {
+      onSendMessage(text);
       setInput('');
     }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    submitMessage(input);
   };
 
   const handleKeyDown = (e) => {
@@ -60,13 +84,29 @@ export default function ChatInterface({
 
   return (
     <div className="chat-interface">
-      <div className={`main-content ${isInitialState ? 'centered' : ''}`}>
+      <div className={`main-content ${isInitialState ? 'centered' : ''}`} ref={scrollAreaRef}>
         {isInitialState ? (
           <div className="hero-section">
             <h2 className="logo-text">debateX</h2>
             <h1 className="hero-headline">
               Experience the <span className="highlight">frontier</span>
             </h1>
+            <p className="hero-subtitle">
+              One question. A council of AIs debates it across 5 rounds — then a Chairman delivers the verdict.
+            </p>
+            <div className="suggestion-chips">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s.text}
+                  className="suggestion-chip"
+                  onClick={() => submitMessage(s.text)}
+                  disabled={isLoading}
+                >
+                  <span className="chip-icon">{s.icon}</span>
+                  {s.text}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="messages-container">
@@ -76,6 +116,9 @@ export default function ChatInterface({
               const round4 = msg.round4 || (msg.rounds?.find(r => r.type === 'challenger')?.data);
               const disagreementMap = msg.disagreement_map || msg.metadata?.disagreement_map;
               const metacognition = msg.metacognition || msg.metadata?.metacognition;
+              // Messages created during this session carry a `loading` object;
+              // messages rehydrated from storage don't — only live ones animate.
+              const isLive = !!msg.loading;
               return (
                 <div key={index} className={`message-group ${msg.role}`}>
                   <div className="message-content">
@@ -83,32 +126,21 @@ export default function ChatInterface({
                       <div className="user-bubble">{msg.content}</div>
                     ) : (
                       <div className="assistant-stages">
-                        {msg.loading?.routing && <div className="loading-stage">Routing: classifying query and assembling the council...</div>}
-                        {routing && <RoutingPanel routing={routing} />}
+                        <DeliberationTrace
+                          msg={msg}
+                          routing={routing}
+                          round3={round3}
+                          round4={round4}
+                          metacognition={metacognition}
+                        />
 
-                        {msg.loading?.metacognition && <div className="loading-stage">Pre-flight: probing model self-consistency...</div>}
-                        {metacognition && <ConfidenceHeatmap data={metacognition} />}
-
-                        {msg.loading?.round1 && <div className="loading-stage">Round 1: Council drafting initial answers...</div>}
-                        {msg.stage1 && <Stage1 responses={msg.stage1} roleMap={routing?.role_map} />}
-
-                        {msg.loading?.round2 && <div className="loading-stage">Round 2: Anonymized peer review and ranking...</div>}
-                        {msg.stage2 && (
-                          <Stage2
-                            rankings={msg.stage2}
-                            labelToModel={msg.metadata?.label_to_model}
-                            aggregateRankings={msg.metadata?.aggregate_rankings}
+                        {msg.stage3 && (
+                          <Stage3
+                            finalResponse={msg.stage3}
+                            animate={isLive}
+                            onStream={followStream}
                           />
                         )}
-
-                        {msg.loading?.round3 && <div className="loading-stage">Round 3: Models revising or defending their answers...</div>}
-                        {round3 && <Round3 results={round3} />}
-
-                        {msg.loading?.round4 && <div className="loading-stage">Round 4: Challenger identifying weak points...</div>}
-                        {round4 && <Round4 result={round4} labelToModel={msg.metadata?.label_to_model} roleMap={routing?.role_map} />}
-
-                        {msg.loading?.round5 && <div className="loading-stage">Round 5: Chairman synthesizing final answer...</div>}
-                        {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
 
                         {disagreementMap && (
                           <DisagreementPanel disagreementMap={disagreementMap} />
@@ -166,7 +198,6 @@ export default function ChatInterface({
                 </div>
               );
             })}
-            {isLoading && <div className="loading-global">Thinking...</div>}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -175,18 +206,18 @@ export default function ChatInterface({
       <div className="input-container">
         <form className="input-box" onSubmit={handleSubmit}>
           <textarea
+            ref={textareaRef}
             className="message-input"
-            placeholder="How can I help you today?"
+            placeholder={isLoading ? 'The council is deliberating…' : 'Ask anything worth debating…'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading}
             rows={1}
           />
           <div className="input-footer">
-            <button 
-              type="submit" 
-              className={`send-btn ${input.trim() ? 'active' : ''}`}
+            <button
+              type="submit"
+              className={`send-btn ${input.trim() && !isLoading ? 'active' : ''}`}
               disabled={!input.trim() || isLoading}
             >
               <SendIcon />
