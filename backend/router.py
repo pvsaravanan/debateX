@@ -1,6 +1,6 @@
 import re
-from dataclasses import dataclass, field
-from typing import List, Dict, Tuple
+from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Any, Tuple
 from .config import debate_MODELS, moderator_MODEL
 from .llm import query_model
 
@@ -13,6 +13,21 @@ class QueryRouting:
     disagreement_panel_mandatory: bool = False
     fact_checker_web_access: bool = False
     estimated_cost_usd: float = 0.0
+
+
+# Bridge between router categories and roles.py persona query types
+CATEGORY_TO_ROLE_TYPE = {
+    "technical/code": "technical",
+    "creative": "creative",
+    "factual/research": "factual",
+    "ethical/philosophical": "ethical",
+    "math/logic": "math",
+}
+
+
+def serialize_routing(routing: "QueryRouting") -> Dict[str, Any]:
+    """Convert QueryRouting to a JSON-serialisable dict for SSE/metadata."""
+    return asdict(routing)
 
 
 # Pricing Table in USD per 1 Million (1M) tokens
@@ -95,6 +110,9 @@ def calculate_predicted_cost(
     Uses standard token assumptions per round and role.
     """
     def get_model_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+        # OpenRouter free-tier models cost nothing regardless of table membership
+        if model_name.endswith(":free"):
+            return 0.0
         # Default pricing fallback if model is not in table
         rates = PRICING_TABLE.get(model_name, {"input": 0.10, "output": 0.15})
         input_cost = (input_tokens / 1_000_000) * rates["input"]
@@ -143,8 +161,15 @@ async def route_query(
 
     category = ""
 
-    # Select the first free model for fast classification
-    classifier_model = next((m for m in available_models if "free" in m), None)
+    # Select a small/fast model for classification (prefer instant/small tiers,
+    # then any free model, then the moderator as a last resort)
+    classifier_model = next(
+        (m for m in available_models
+         if "instant" in m or "-xs-" in m or "8b" in m or "gemma" in m),
+        None
+    )
+    if not classifier_model:
+        classifier_model = next((m for m in available_models if "free" in m), None)
     if not classifier_model:
         classifier_model = moderator_MODEL
 
@@ -184,59 +209,58 @@ async def route_query(
     if not category:
         category = classify_query_local(query)
 
-    # 3. Resolve configurations based on classification category
-    optimal_council = []
-    disagreement_panel_mandatory = False
-    fact_checker_web_access = False
+    # 3. Resolve configurations based on classification category.
+    # Each category lists model-name substrings in PREFERENCE order — the council
+    # is assembled by scanning preferences first so the strongest fits lead.
+    category_config = {
+        "technical/code": {
+            "disagreement_panel_mandatory": True,
+            "fact_checker_web_access": True,
+            # Coding & reasoning models (poolside/laguna are code-specialised)
+            "preferences": ["llama-3.3", "nemotron", "gpt-oss", "laguna", "qwen", "deepseek", "llama-3.1"],
+        },
+        "creative": {
+            "disagreement_panel_mandatory": False,
+            "fact_checker_web_access": False,
+            # Context-rich & diverse models
+            "preferences": ["gemma", "gpt-oss", "nemotron", "qwen", "glm-4.5", "llama-3.3"],
+        },
+        "factual/research": {
+            "disagreement_panel_mandatory": True,
+            "fact_checker_web_access": True,
+            # Comprehensive & precision models
+            "preferences": ["llama-3.3", "nemotron", "gpt-oss", "gemma", "qwen", "deepseek"],
+        },
+        "ethical/philosophical": {
+            "disagreement_panel_mandatory": False,
+            "fact_checker_web_access": False,
+            # Highly articulate & reasoning models
+            "preferences": ["nemotron", "gpt-oss", "llama-3.3", "gemma", "glm-4.5"],
+        },
+        "math/logic": {
+            "disagreement_panel_mandatory": True,
+            "fact_checker_web_access": False,
+            # Reasoning & proof-capable models
+            "preferences": ["llama-3.3", "nemotron", "gpt-oss", "deepseek", "qwen", "llama-3.1"],
+        },
+    }
 
-    if category == "technical/code":
-        disagreement_panel_mandatory = True
-        fact_checker_web_access = True
-        # Coding & Reasoning models
-        optimal_council = [
-            m for m in available_models
-            if "llama-3.3" in m or "llama-3.1" in m or "gpt-oss" in m or "qwen" in m or "deepseek" in m
-        ]
-    elif category == "creative":
-        disagreement_panel_mandatory = False
-        fact_checker_web_access = False
-        # Context-rich & Diverse models
-        optimal_council = [
-            m for m in available_models
-            if "gpt-oss" in m or "qwen" in m or "glm-4.5" in m
-        ]
-    elif category == "factual/research":
-        disagreement_panel_mandatory = True
-        fact_checker_web_access = True
-        # Comprehensive & Precision models
-        optimal_council = [
-            m for m in available_models
-            if "llama-3.3" in m or "qwen" in m or "gpt-oss" in m or "deepseek" in m
-        ]
-    elif category == "ethical/philosophical":
-        disagreement_panel_mandatory = False
-        fact_checker_web_access = False
-        # Highly articulate & Reasoning models
-        optimal_council = [
-            m for m in available_models
-            if "gpt-oss" in m or "llama-3.3" in m or "glm-4.5" in m
-        ]
-    elif category == "math/logic":
-        disagreement_panel_mandatory = True
-        fact_checker_web_access = False
-        # Reasoning & proof-capable models
-        optimal_council = [
-            m for m in available_models
-            if "llama-3.3" in m or "deepseek" in m or "llama-3.1" in m or "qwen" in m
-        ]
+    config = category_config.get(category, category_config["factual/research"])
+    disagreement_panel_mandatory = config["disagreement_panel_mandatory"]
+    fact_checker_web_access = config["fact_checker_web_access"]
+
+    optimal_council = []
+    for pref in config["preferences"]:
+        for m in available_models:
+            if pref in m and m not in optimal_council:
+                optimal_council.append(m)
 
     # Graceful fallback: if no optimal models match, use the first 3 available models
     if not optimal_council:
         optimal_council = available_models[:3]
 
-    # Ensure we return at least a subset of models
+    # Cap large councils at 4 models to save cost and latency
     if len(optimal_council) > 4:
-        # Cap large councils at 4 models to save cost and latency
         optimal_council = optimal_council[:4]
 
     # 4. Calculate overall cost estimate

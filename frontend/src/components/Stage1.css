@@ -51,3 +51,8 @@
   margin-bottom: 16px;
   font-family: 'JetBrains Mono', monospace;
 }
+
+.model-role-badge {
+  color: var(--accent-blue);
+  font-weight: 600;
+}

@@ -2,15 +2,17 @@
 
 import json
 import os
+import threading
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR
 
-# WARNING: This simple JSON file storage is NOT thread-safe.
-# Concurrent requests reading/writing to the same conversation file can cause 
-# data loss due to race conditions in the read-modify-write pattern.
-# For production, this should be replaced with a database or use proper file locking (e.g. fcntl/msvcrt).
+# A process-wide lock serializes every read-modify-write so concurrent requests
+# (event-loop callbacks or threadpool workers) cannot interleave and lose data.
+# NOTE: this protects a single process only — running multiple uvicorn workers
+# against the same data directory still requires a database or file locking.
+_storage_lock = threading.Lock()
 
 def ensure_data_dir():
     """Ensure the data directory exists."""
@@ -124,16 +126,17 @@ def add_user_message(conversation_id: str, content: str):
         conversation_id: Conversation identifier
         content: User message content
     """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
+    with _storage_lock:
+        conversation = get_conversation(conversation_id)
+        if conversation is None:
+            raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["messages"].append({
-        "role": "user",
-        "content": content
-    })
+        conversation["messages"].append({
+            "role": "user",
+            "content": content
+        })
 
-    save_conversation(conversation)
+        save_conversation(conversation)
 
 
 def add_assistant_message(
@@ -155,23 +158,24 @@ def add_assistant_message(
         rounds: Optional list of all deliberation rounds
         metadata: Optional dictionary of conversation metadata
     """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
+    with _storage_lock:
+        conversation = get_conversation(conversation_id)
+        if conversation is None:
+            raise ValueError(f"Conversation {conversation_id} not found")
 
-    msg = {
-        "role": "assistant",
-        "stage1": stage1,
-        "stage2": stage2,
-        "stage3": stage3
-    }
-    if rounds is not None:
-        msg["rounds"] = rounds
-    if metadata is not None:
-        msg["metadata"] = metadata
+        msg = {
+            "role": "assistant",
+            "stage1": stage1,
+            "stage2": stage2,
+            "stage3": stage3
+        }
+        if rounds is not None:
+            msg["rounds"] = rounds
+        if metadata is not None:
+            msg["metadata"] = metadata
 
-    conversation["messages"].append(msg)
-    save_conversation(conversation)
+        conversation["messages"].append(msg)
+        save_conversation(conversation)
 
 
 def update_conversation_title(conversation_id: str, title: str):
@@ -182,12 +186,13 @@ def update_conversation_title(conversation_id: str, title: str):
         conversation_id: Conversation identifier
         title: New title for the conversation
     """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
+    with _storage_lock:
+        conversation = get_conversation(conversation_id)
+        if conversation is None:
+            raise ValueError(f"Conversation {conversation_id} not found")
 
-    conversation["title"] = title
-    save_conversation(conversation)
+        conversation["title"] = title
+        save_conversation(conversation)
 
 
 def delete_conversation(conversation_id: str) -> bool:

@@ -11,6 +11,17 @@ class RoleAssignment:
     steelmanner: str = ""
     chairman: str = ""
     system_prompts: Dict[str, str] = field(default_factory=dict)
+    chairman_prompt: str = ""
+
+
+# Human-readable labels for UI display
+ROLE_LABELS = {
+    "chairman": "Chairman",
+    "devils_advocate": "Devil's Advocate",
+    "fact_checker": "Fact-Checker",
+    "steelmanner": "Steelmanner",
+    "reasoner": "Reasoner",
+}
 
 
 # Specialized cognitive prompt templates by Role and Query Type
@@ -227,3 +238,99 @@ def allocate_roles(
             assignment.system_prompts[model] = get_prompt("reasoner")
 
     return assignment
+
+
+# Directive appended to council personas so every member still produces a
+# complete first-round answer (the adversarial framing kicks in during review).
+ROUND1_DIRECTIVE = (
+    "\n\nIn the initial round, provide your own complete answer to the user's "
+    "question through the lens of your role. In later rounds, apply your role "
+    "when evaluating and critiquing the other council members' answers."
+)
+
+
+def allocate_personas(
+    council: List[str],
+    chairman_model: str,
+    query_type: str,
+    query_index: int = 0
+) -> RoleAssignment:
+    """
+    Allocate adversarial personas to the debate council, with the chairman persona
+    assigned to a separately chosen chairman/moderator model.
+
+    Unlike allocate_roles(), the chairman does NOT consume a council seat — every
+    council member gets a deliberation persona (Reasoner, Devil's Advocate,
+    Fact-Checker, Steelmanner), and the chairman prompt is stored separately in
+    `chairman_prompt` for use during the synthesis round.
+
+    Args:
+        council: Models participating in rounds 1-4
+        chairman_model: Model that synthesizes in the final round
+        query_type: 'technical' | 'creative' | 'factual' | 'ethical' | 'math'
+        query_index: Offset to rotate council roles deterministically per query
+
+    Returns:
+        RoleAssignment with council personas and the chairman prompt.
+    """
+    if not council:
+        raise ValueError("Council list cannot be empty.")
+
+    valid_query_types = ["technical", "creative", "factual", "ethical", "math"]
+    normalized = query_type.strip().lower()
+    if normalized not in valid_query_types:
+        normalized = "factual"
+
+    n = len(council)
+    shift = query_index % n
+    rotated = council[shift:] + council[:shift]
+
+    assignment = RoleAssignment()
+    assignment.chairman = chairman_model
+    assignment.chairman_prompt = PROMPT_TEMPLATES["chairman"][normalized]
+
+    def council_prompt(role_key: str) -> str:
+        base = PROMPT_TEMPLATES[role_key][normalized]
+        if role_key == "fact_checker":
+            base += "\nIMPORTANT: Verify every claim you rely on; flag anything you cannot verify."
+        return base + ROUND1_DIRECTIVE
+
+    # There must always be at least one Reasoner drafting a straight answer.
+    role_order_by_size = {
+        1: ["reasoner"],
+        2: ["reasoner", "devils_advocate"],
+        3: ["reasoner", "devils_advocate", "fact_checker"],
+        4: ["reasoner", "devils_advocate", "fact_checker", "steelmanner"],
+    }
+    roles = role_order_by_size.get(min(n, 4))
+    # 5+ members: extras become additional Reasoners
+    roles = roles + ["reasoner"] * (n - len(roles))
+
+    for model, role in zip(rotated, roles):
+        assignment.system_prompts[model] = council_prompt(role)
+        if role == "reasoner":
+            assignment.reasoners.append(model)
+        elif role == "devils_advocate":
+            assignment.devils_advocate = model
+        elif role == "fact_checker":
+            assignment.fact_checker = model
+        elif role == "steelmanner":
+            assignment.steelmanner = model
+
+    return assignment
+
+
+def get_role_map(assignment: RoleAssignment) -> Dict[str, str]:
+    """Map each model to its human-readable role label (for UI display)."""
+    role_map: Dict[str, str] = {}
+    for model in assignment.reasoners:
+        role_map[model] = ROLE_LABELS["reasoner"]
+    if assignment.devils_advocate:
+        role_map[assignment.devils_advocate] = ROLE_LABELS["devils_advocate"]
+    if assignment.fact_checker:
+        role_map[assignment.fact_checker] = ROLE_LABELS["fact_checker"]
+    if assignment.steelmanner:
+        role_map[assignment.steelmanner] = ROLE_LABELS["steelmanner"]
+    if assignment.chairman and assignment.chairman not in role_map:
+        role_map[assignment.chairman] = ROLE_LABELS["chairman"]
+    return role_map

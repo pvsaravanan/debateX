@@ -27,12 +27,24 @@ async def query_models_parallel(
     models: List[str],
     messages: List[Dict[str, str]],
     temperature: float = 0.7,
+    system_prompts: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
+
+    Args:
+        system_prompts: Optional per-model system prompt map; when a model has an
+            entry, it is prepended to `messages` as a system message (used for
+            persona allocation).
     """
+    def build_messages(model: str) -> List[Dict[str, str]]:
+        prompt = (system_prompts or {}).get(model)
+        if prompt:
+            return [{"role": "system", "content": prompt}] + messages
+        return messages
+
     # Create tasks for all models
-    tasks = [query_model(model, messages, temperature=temperature) for model in models]
+    tasks = [query_model(model, build_messages(model), temperature=temperature) for model in models]
 
     # Wait for all to complete
     responses = await asyncio.gather(*tasks, return_exceptions=True)

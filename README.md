@@ -3,8 +3,8 @@
 **Enterprise-grade multi-LLM deliberation engine for council-vetted answers.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)](https://python.org)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://reactjs.org)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://reactjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100.0%2B-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![Groq](https://img.shields.io/badge/Groq-Supported-orange)](https://groq.com)
 
@@ -22,10 +22,13 @@ The platform passes query contexts through an advanced, anonymized multi-round c
 
 | Feature | Description |
 |---------|-------------|
-| **5-Round Deliberation Pipeline** | A rigorous pipeline including blind initial responses, anonymized peer review and ranking, logic defense and revision, challenger critique, and final synthesis by a Moderator. |
-| **Dynamic Cognitive Persona Allocation** | A deterministic shift-based role rotation engine assigns specific behavioral personas per query (Reasoner, Fact-Checker, Devil's Advocate, Steelmanner, Chairman). |
-| **Dual-Path Query Routing** | Fast query router classifies requests (technical, creative, factual, ethical, math), recommends optimal model subsets, and projects token consumption and cost. |
-| **Real-Time SSE Stream** | High-speed Server-Sent Events (SSE) streaming API paired with a responsive React dashboard showcasing live-updating stages and peer ranks. |
+| **Query Classification** | Every query is routed first: a fast LLM classifier (with a local regex fallback) buckets it into technical/code, creative, factual/research, ethical/philosophical, or math/logic, and assembles a preference-ordered council of the best-fit models. |
+| **Dynamic Persona Allocation** | A deterministic rotation engine assigns behavioral personas per query — Reasoner, Devil's Advocate, Fact-Checker, Steelmanner as council system prompts, plus a query-type-specific Chairman persona for synthesis. |
+| **Anonymized Peer Review** | Council answers are re-labeled "Response A/B/C…" before ranking, so models evaluate arguments — not reputations. De-anonymization happens client-side, for display only. |
+| **Challenger Critique** | The council's Devil's Advocate (or the worst-ranked model) is tasked with aggressively attacking the leading answer before synthesis. |
+| **Real-Time SSE Stream** | Server-Sent Events stream every phase (`routing_*`, `round1_*`…`round5_*`) into a live-updating React dashboard with inspectable raw outputs. |
+| **Cost Estimation** | The router projects the USD cost of the full deliberation from a per-model pricing table before Round 1 begins; free-tier models are costed at $0. |
+| **Disagreement Analysis** | The Chairman emits a structured consensus/disagreement map (with per-model confidence scores) rendered as an interactive panel; a heuristic fallback covers unparseable output. |
 
 ---
 
@@ -46,18 +49,21 @@ graph TD
 
 ---
 
-## Supported Models
+## Configured Models
+
+Models are registered dynamically in `backend/config.py` based on which API keys are present in `.env`:
 
 | Provider | Model | Primary Role / Capability |
 |----------|-------|---------------------------|
-| **Groq Cloud API** | `groq/llama-3.3-70b-versatile` | Primary Chairman & High-Performance Synthesis |
-| **Groq Cloud API** | `groq/openai/gpt-oss-120b` | Reasoning & Code Expert |
-| **Groq Cloud API** | `groq/qwen/qwen3-32b` | Precision Logic Node |
-| **Groq Cloud API** | `groq/llama-3.1-8b-instant` | High-Speed Processing |
-| **OpenRouter API** | `deepseek/deepseek-v4-flash:free` | Default Moderator fallback |
-| **OpenRouter API** | `z-ai/glm-4.5-air:free` | Diverse Context processing |
-| **OpenRouter API** | `liquid/lfm-2.5-1.2b-instruct:free` | Lightweight semantic node |
-| **OpenRouter API** | `nvidia/nemotron-3-nano-30b-a3b:free` | Logical extraction |
+| **Groq Cloud API** | `groq/llama-3.3-70b-versatile` | Default Chairman & high-performance synthesis |
+| **Groq Cloud API** | `groq/openai/gpt-oss-20b` | Reasoning node |
+| **Groq Cloud API** | `groq/llama-3.1-8b-instant` | High-speed processing & query classification |
+| **OpenRouter API** | `nvidia/nemotron-3-ultra-550b-a55b:free` | Deep reasoning (free tier) |
+| **OpenRouter API** | `poolside/laguna-m.1:free` | Code specialist (free tier) |
+| **OpenRouter API** | `google/gemma-4-31b-it:free` | Creative & diverse context (free tier) |
+| **OpenRouter API** | `poolside/laguna-xs-2.1:free` | Lightweight code node (free tier) |
+
+The query router selects a per-query council (max 4) from whatever is registered — swap models freely; routing preferences match on name substrings.
 
 ---
 
@@ -81,10 +87,14 @@ Configure your environment variables:
 cp .env.example .env
 ```
 
-Open `.env` and configure your API credentials:
+Open `.env` and configure your API credentials (at least one key is required):
 ```env
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 GROQ_API_KEY=your_groq_api_key_here
+
+# Optional: pre-flight self-consistency probing (3 samples per model at
+# different temperatures). Off by default to stay inside free-tier rate limits.
+ENABLE_METACOGNITION=false
 ```
 
 ---
@@ -112,10 +122,10 @@ uv run python -m backend.main
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e .           # dependencies are declared in pyproject.toml
 python -m backend.main
 ```
-*Backend server runs at **http://localhost:8001***
+*Backend server runs at **http://localhost:8001***. Always start it from the project root (the backend uses relative imports).*
 
 **Frontend Setup**
 ```bash
@@ -133,11 +143,11 @@ Verify all models, dynamic routing modules, cost calculations, and role assignme
 
 ```bash
 # Run all tests
-uv run python -m unittest tests/test_roles.py tests/test_router.py
+uv run python -m unittest tests.test_roles tests.test_router
 
 # Run individually
-uv run python -m unittest tests/test_roles.py
-uv run python -m unittest tests/test_router.py
+uv run python -m unittest tests.test_roles
+uv run python -m unittest tests.test_router
 ```
 
 ---
@@ -148,10 +158,14 @@ uv run python -m unittest tests/test_router.py
 |------|-------------|
 | `.agent/` | Antigravity prompts and workflow integrations |
 | `backend/` | Python/FastAPI backend logic |
-| `backend/config.py` | Dynamic multi-provider model registrations |
-| `backend/debate.py` | Core 5-Round pipeline orchestration logic |
-| `backend/router.py` | Category router, pricing table & cost calculations |
+| `backend/config.py` | Dynamic multi-provider model registrations & feature flags |
+| `backend/debate.py` | Single orchestrator (`run_debate_stream`) + all 5 round functions |
+| `backend/router.py` | Query classifier, council selection, pricing table & cost estimation |
+| `backend/roles.py` | Persona allocation engine (Reasoner, Devil's Advocate, Fact-Checker, Steelmanner, Chairman) |
+| `backend/disagreement.py` | Chairman disagreement-map schema, parser & heuristic fallback |
+| `backend/metacognition.py` | Optional self-consistency probing (behind `ENABLE_METACOGNITION`) |
 | `frontend/` | React/Vite client application |
+| `docs/` | API reference, deployment & development guides |
 | `openspec/` | OpenSpec specifications library & changes archive |
 | `tests/` | Verification test suites |
 

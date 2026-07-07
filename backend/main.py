@@ -1,5 +1,7 @@
 """FastAPI backend for DebateX."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -10,10 +12,18 @@ import json
 import asyncio
 
 from . import storage
-from .debate import run_full_debate, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, stage3_revise_or_defend, stage4_challenger_critique, stage5_chairman_synthesis
-from .metacognition import run_metacognition, serialize_metacognition_result
+from .debate import run_debate_stream, run_full_debate, generate_conversation_title
+from .http_client import close_client
 
-app = FastAPI(title="DebateX API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Release the pooled httpx client on shutdown
+    await close_client()
+
+
+app = FastAPI(title="DebateX API", lifespan=lifespan)
 
 # Enable CORS for local development - MUST be added before other middleware
 app.add_middleware(
@@ -107,6 +117,8 @@ async def delete_conversation(conversation_id: str):
         if not success:
             raise HTTPException(status_code=404, detail="Conversation not found")
         return {"success": True, "message": "Conversation deleted"}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -116,45 +128,38 @@ async def delete_conversation(conversation_id: str):
 @app.post("/api/conversations/{conversation_id}/message")
 async def send_message(conversation_id: str, request: SendMessageRequest):
     """
-    Send a message and run the 5-round debate process.
-    Returns the complete response with all stages.
+    Send a message and run the full deliberation (batch mode).
+    Returns the complete response with all rounds.
     """
-    # Check if conversation exists
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
-    # Add user message
     storage.add_user_message(conversation_id, request.content)
 
-    # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
         storage.update_conversation_title(conversation_id, title)
 
-    # Run the 5-round debate process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_debate(
+    stage1_results, stage2_results, stage5_result, metadata = await run_full_debate(
         request.content
     )
 
-    # Add assistant message with all stages
     storage.add_assistant_message(
         conversation_id,
         stage1_results,
         stage2_results,
-        stage3_result,
+        stage5_result,
         rounds=metadata.get("rounds"),
         metadata=metadata
     )
 
-    # Return the complete response with metadata
     return {
         "stage1": stage1_results,
         "stage2": stage2_results,
-        "stage3": stage3_result,
+        "stage3": stage5_result,
         "metadata": metadata,
         "rounds": metadata.get("rounds")
     }
@@ -163,105 +168,67 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
 @app.post("/api/conversations/{conversation_id}/message/stream")
 async def send_message_stream(conversation_id: str, request: SendMessageRequest):
     """
-    Send a message and stream the 5-round debate process.
-    Returns Server-Sent Events as each stage completes.
+    Send a message and stream the deliberation as Server-Sent Events.
+
+    Event protocol (from debate.run_debate_stream):
+        routing_start / routing_complete
+        metacognition_start / metacognition_complete   (when enabled)
+        round1_start / round1_complete ... round5_start / round5_complete
+        title_complete  (first message only)
+        complete / error
     """
-    # Check if conversation exists
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
     async def event_generator():
         try:
-            # Add user message
             storage.add_user_message(conversation_id, request.content)
 
-            # Start title generation in parallel (don't await yet)
+            # Generate the title concurrently with the debate
             title_task = None
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # METACOGNITION DISABLED — re-enable by restoring meta_task block
-            metacognition_serialized = None
+            async for event in run_debate_stream(request.content):
+                if event["type"] == "complete":
+                    result = event["result"]
 
-            # Round 1: Initial responses
-            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+                    # Emit the title before finalizing
+                    if title_task:
+                        title = await title_task
+                        storage.update_conversation_title(conversation_id, title)
+                        yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+                        title_task = None
 
-            stage1_results = await stage1_collect_responses(request.content)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+                    storage.add_assistant_message(
+                        conversation_id,
+                        result["stage1"],
+                        result["stage2"],
+                        result["stage3"],
+                        rounds=result["rounds"],
+                        metadata=result["metadata"]
+                    )
 
-            # Round 2: Collect rankings
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+                    # The client does not need the (large) assembled result again
+                    yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                else:
+                    yield f"data: {json.dumps(event)}\n\n"
 
-            # Round 3: Revise or Defend
-            yield f"data: {json.dumps({'type': 'round3_start'})}\n\n"
-            stage3_results = await stage3_revise_or_defend(request.content, stage1_results, stage2_results, label_to_model, aggregate_rankings)
-            yield f"data: {json.dumps({'type': 'round3_complete', 'data': stage3_results})}\n\n"
-
-            # Round 4: Challenger Critique
-            yield f"data: {json.dumps({'type': 'round4_start'})}\n\n"
-            stage4_result = await stage4_challenger_critique(request.content, stage3_results, aggregate_rankings)
-            yield f"data: {json.dumps({'type': 'round4_complete', 'data': stage4_result})}\n\n"
-
-            # Round 5: Chairman Synthesis
-            yield f"data: {json.dumps({'type': 'round5_start'})}\n\n"
-            stage5_result = await stage5_chairman_synthesis(
-                request.content,
-                stage1_results,
-                stage2_results,
-                stage3_results,
-                stage4_result,
-                label_to_model,
-                aggregate_rankings,
-                metacognition_summary=None,
-            )
-            disagreement_map = stage5_result.get("disagreement_map")
-            yield f"data: {json.dumps({'type': 'round5_complete', 'data': stage5_result, 'disagreement_map': disagreement_map})}\n\n"
-
-            # Compile new rounds list
-            rounds = [
-                {"round": 1, "type": "initial_answers", "data": stage1_results},
-                {"round": 2, "type": "peer_review", "data": stage2_results},
-                {"round": 3, "type": "revise_or_defend", "data": stage3_results},
-                {"round": 4, "type": "challenger", "data": stage4_result},
-                {"round": 5, "type": "chairman_synthesis", "data": stage5_result}
-            ]
-
-            metadata = {
-                "label_to_model": label_to_model,
-                "aggregate_rankings": aggregate_rankings,
-                "rounds": rounds,
-                "disagreement_map": disagreement_map,
-                "metacognition": metacognition_serialized,
-            }
-
-            # Wait for title generation if it was started
+            # Debate errored out before completing — still resolve the title
             if title_task:
-                title = await title_task
-                storage.update_conversation_title(conversation_id, title)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
-
-            # Save complete assistant message
-            storage.add_assistant_message(
-                conversation_id,
-                stage1_results,
-                stage2_results,
-                stage5_result,
-                rounds=rounds,
-                metadata=metadata
-            )
-
-            # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                try:
+                    title = await title_task
+                    storage.update_conversation_title(conversation_id, title)
+                    yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+                except Exception:
+                    pass
 
         except Exception as e:
-            # Send error event
+            import traceback
+            traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -270,6 +237,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         }
     )
 

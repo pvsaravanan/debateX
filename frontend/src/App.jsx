@@ -92,6 +92,7 @@ function App() {
 
       const assistantMessage = {
         role: 'assistant',
+        routing: null,
         stage1: null,
         stage2: null,
         round3: null,
@@ -100,7 +101,7 @@ function App() {
         disagreement_map: null,
         metacognition: null,
         metadata: null,
-        loading: { metacognition: false, stage1: false, stage2: false, round3: false, round4: false, round5: false },
+        loading: { routing: false, metacognition: false, round1: false, round2: false, round3: false, round4: false, round5: false },
       };
 
       setCurrentConversation((prev) => ({
@@ -110,23 +111,33 @@ function App() {
 
       await api.sendMessageStream(activeId, content, (eventType, event) => {
         switch (eventType) {
+          case 'routing_start':
+            updateLastMessage((m) => { m.loading.routing = true; });
+            break;
+          case 'routing_complete':
+            updateLastMessage((m) => { m.routing = event.data; m.loading.routing = false; });
+            break;
           case 'metacognition_start':
             updateLastMessage((m) => { m.loading.metacognition = true; });
             break;
           case 'metacognition_complete':
             updateLastMessage((m) => { m.metacognition = event.data; m.loading.metacognition = false; });
             break;
-          case 'stage1_start':
-            updateLastMessage((m) => { m.loading.stage1 = true; });
+          case 'round1_start':
+            updateLastMessage((m) => { m.loading.round1 = true; });
             break;
-          case 'stage1_complete':
-            updateLastMessage((m) => { m.stage1 = event.data; m.loading.stage1 = false; });
+          case 'round1_complete':
+            updateLastMessage((m) => { m.stage1 = event.data; m.loading.round1 = false; });
             break;
-          case 'stage2_start':
-            updateLastMessage((m) => { m.loading.stage2 = true; });
+          case 'round2_start':
+            updateLastMessage((m) => { m.loading.round2 = true; });
             break;
-          case 'stage2_complete':
-            updateLastMessage((m) => { m.stage2 = event.data; m.metadata = event.metadata; m.loading.stage2 = false; });
+          case 'round2_complete':
+            updateLastMessage((m) => {
+              m.stage2 = event.data;
+              m.metadata = { ...(m.metadata || {}), ...event.metadata };
+              m.loading.round2 = false;
+            });
             break;
           case 'round3_start':
             updateLastMessage((m) => { m.loading.round3 = true; });
@@ -144,10 +155,10 @@ function App() {
             updateLastMessage((m) => { m.loading.round5 = true; });
             break;
           case 'round5_complete':
-            updateLastMessage((m) => { 
-              m.stage3 = event.data; 
+            updateLastMessage((m) => {
+              m.stage3 = event.data;
               m.disagreement_map = event.disagreement_map || null;
-              m.loading.round5 = false; 
+              m.loading.round5 = false;
             });
             break;
           case 'title_complete':
@@ -166,12 +177,7 @@ function App() {
           case 'error':
             updateLastMessage((m) => {
               m.error = event.message || "An unexpected error occurred.";
-              m.loading.metacognition = false;
-              m.loading.stage1 = false;
-              m.loading.stage2 = false;
-              m.loading.round3 = false;
-              m.loading.round4 = false;
-              m.loading.round5 = false;
+              Object.keys(m.loading).forEach((k) => { m.loading[k] = false; });
             });
             setIsLoading(false);
             break;

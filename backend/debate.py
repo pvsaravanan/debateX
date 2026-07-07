@@ -1,8 +1,25 @@
-"""3-stage DebateX orchestration."""
+"""DebateX 5-round deliberation orchestration.
 
-from typing import List, Dict, Any, Optional, Tuple
+Pipeline (single source of truth: run_debate_stream):
+    Routing  → classify query, pick optimal council, allocate personas, estimate cost
+    Round 1  → council answers in parallel (persona system prompts)
+    Round 2  → anonymized peer review & ranking
+    Round 3  → revise or defend under peer pressure
+    Round 4  → challenger critique of the leading answer (Devil's Advocate preferred)
+    Round 5  → chairman synthesis + structured disagreement map
+"""
+
+import asyncio
+import json
+import re
+import zlib
+from collections import defaultdict
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+
 from .llm import query_models_parallel, query_model
-from .config import debate_MODELS, moderator_MODEL
+from .config import debate_MODELS, moderator_MODEL, ENABLE_METACOGNITION
+from .router import route_query, serialize_routing, CATEGORY_TO_ROLE_TYPE
+from .roles import allocate_personas, get_role_map, RoleAssignment
 from .disagreement import (
     CHAIRMAN_DISAGREEMENT_SCHEMA,
     DisagreementMap,
@@ -17,25 +34,30 @@ from .metacognition import (
 )
 
 
-async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
-    """
-    Stage 1: Collect individual responses from all debate models.
+# ---------------------------------------------------------------------------
+# Round 1: initial answers
+# ---------------------------------------------------------------------------
 
-    Args:
-        user_query: The user's question
+async def stage1_collect_responses(
+    user_query: str,
+    council: Optional[List[str]] = None,
+    system_prompts: Optional[Dict[str, str]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Round 1: Collect individual responses from the council models in parallel.
+    Each model may carry a persona system prompt (Reasoner, Devil's Advocate, ...).
 
     Returns:
-        List of dicts with 'model' and 'response' keys
+        List of dicts with 'model' and 'response' keys (failed models omitted).
     """
+    models = council or debate_MODELS
     messages = [{"role": "user", "content": user_query}]
 
-    # Query all models in parallel
-    responses = await query_models_parallel(debate_MODELS, messages)
+    responses = await query_models_parallel(models, messages, system_prompts=system_prompts)
 
-    # Format results
     stage1_results = []
     for model, response in responses.items():
-        if response is not None:  # Only include successful responses
+        if response is not None and (response.get('content') or '').strip():
             stage1_results.append({
                 "model": model,
                 "response": response.get('content', '')
@@ -44,30 +66,32 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     return stage1_results
 
 
+# ---------------------------------------------------------------------------
+# Round 2: anonymized peer review & ranking
+# ---------------------------------------------------------------------------
+
 async def stage2_collect_rankings(
     user_query: str,
-    stage1_results: List[Dict[str, Any]]
+    stage1_results: List[Dict[str, Any]],
+    council: Optional[List[str]] = None,
+    system_prompts: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
-    Stage 2: Each model ranks the anonymized responses.
-
-    Args:
-        user_query: The original user query
-        stage1_results: Results from Stage 1
+    Round 2: Each council model ranks the anonymized responses.
 
     Returns:
         Tuple of (rankings list, label_to_model mapping)
     """
-    # Create anonymized labels for responses (Response A, Response B, etc.)
-    labels = [chr(65 + i) for i in range(len(stage1_results))]  # A, B, C, ...
+    models = council or debate_MODELS
 
-    # Create mapping from label to model name
+    # Create anonymized labels for responses (Response A, Response B, etc.)
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+
     label_to_model = {
         f"Response {label}": result['model']
         for label, result in zip(labels, stage1_results)
     }
 
-    # Build the ranking prompt
     responses_text = "\n\n".join([
         f"Response {label}:\n{result['response']}"
         for label, result in zip(labels, stage1_results)
@@ -108,10 +132,8 @@ Now provide your evaluation and ranking:"""
 
     messages = [{"role": "user", "content": ranking_prompt}]
 
-    # Get rankings from all debate models in parallel
-    responses = await query_models_parallel(debate_MODELS, messages)
+    responses = await query_models_parallel(models, messages, system_prompts=system_prompts)
 
-    # Format results
     stage2_results = []
     for model, response in responses.items():
         if response is not None:
@@ -126,126 +148,36 @@ Now provide your evaluation and ranking:"""
     return stage2_results, label_to_model
 
 
-async def stage3_synthesize_final(
-    user_query: str,
-    stage1_results: List[Dict[str, Any]],
-    stage2_results: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """
-    Stage 3: moderator synthesizes final response.
-
-    Args:
-        user_query: The original user query
-        stage1_results: Individual model responses from Stage 1
-        stage2_results: Rankings from Stage 2
-
-    Returns:
-        Dict with 'model' and 'response' keys
-    """
-    # Build comprehensive context for moderator
-    stage1_text = "\n\n".join([
-        f"Model: {result['model']}\nResponse: {result['response']}"
-        for result in stage1_results
-    ])
-
-    stage2_text = "\n\n".join([
-        f"Model: {result['model']}\nRanking: {result['ranking']}"
-        for result in stage2_results
-    ])
-
-    moderator_prompt = f"""You are the moderator of an DebateX. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
-
-Original Question: {user_query}
-
-STAGE 1 - Individual Responses:
-{stage1_text}
-
-STAGE 2 - Peer Rankings:
-{stage2_text}
-
-Your task as moderator is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
-
-CRITICAL LANGUAGE REQUIREMENT: You MUST write your final response strictly in English, regardless of the language of the user's original question.
-
-Provide a clear, well-reasoned final answer that represents the debate's collective wisdom:"""
-
-    messages = [{"role": "user", "content": moderator_prompt}]
-
-    # Query the moderator model
-    response = None
-    try:
-        response = await query_model(moderator_MODEL, messages)
-    except Exception as e:
-        print(f"Moderator model {moderator_MODEL} failed with exception: {e}")
-
-    content = response.get('content', '').strip() if response else ""
-
-    if not content:
-        # Fallback if moderator fails or returns empty - try alternative model if available
-        print(f"Moderator model {moderator_MODEL} failed or returned empty. Attempting fallback synthesis...")
-        
-        # Try to get a simple synthesis from first available debate model
-        for model in debate_MODELS:
-            try:
-                fallback_response = await query_model(model, messages)
-                fallback_content = fallback_response.get('content', '').strip() if fallback_response else ""
-                
-                if fallback_content:
-                    return {
-                        "model": model,
-                        "response": fallback_content
-                    }
-            except Exception as e:
-                print(f"Fallback model {model} failed with exception: {e}")
-                continue
-        
-        # Final fallback
-        return {
-            "model": moderator_MODEL,
-            "response": "Error: Unable to generate final synthesis. All models failed or returned empty responses."
-        }
-
-    return {
-        "model": moderator_MODEL,
-        "response": response.get('content', '')
-    }
-
-
 def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     Parse the FINAL RANKING section from the model's response.
 
-    Args:
-        ranking_text: The full text response from the model
-
     Returns:
-        List of response labels in ranked order
+        List of response labels in ranked order (deduplicated, first occurrence wins).
     """
-    import re
+    def dedupe(labels: List[str]) -> List[str]:
+        seen = set()
+        out = []
+        for label in labels:
+            if label not in seen:
+                seen.add(label)
+                out.append(label)
+        return out
 
-    # Look for "FINAL RANKING:" section
     if "FINAL RANKING:" in ranking_text:
-        # Extract everything after "FINAL RANKING:"
         parts = ranking_text.split("FINAL RANKING:")
         if len(parts) >= 2:
             ranking_section = parts[1]
-            # Try to extract numbered list format (e.g., "1. Response A")
-            # This pattern looks for: number, period, optional space, "Response X"
+            # Numbered list format (e.g., "1. Response A")
             numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
             if numbered_matches:
-                # Extract just the "Response X" part
-                return [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+                return dedupe([re.search(r'Response [A-Z]', m).group() for m in numbered_matches])
 
-            # Fallback: Extract all "Response X" patterns in order
-            matches = re.findall(r'Response [A-Z]', ranking_section)
-            return matches
+            # Fallback: any "Response X" patterns in order
+            return dedupe(re.findall(r'Response [A-Z]', ranking_section))
 
-    # Fallback: try to find any "Response X" patterns in order
-    matches = re.findall(r'Response [A-Z]', ranking_text)
-    return matches
+    # Fallback: any "Response X" patterns anywhere in the text
+    return dedupe(re.findall(r'Response [A-Z]', ranking_text))
 
 
 def calculate_aggregate_rankings(
@@ -253,32 +185,21 @@ def calculate_aggregate_rankings(
     label_to_model: Dict[str, str]
 ) -> List[Dict[str, Any]]:
     """
-    Calculate aggregate rankings across all models.
-
-    Args:
-        stage2_results: Rankings from each model
-        label_to_model: Mapping from anonymous labels to model names
+    Calculate aggregate rankings across all peer evaluations.
 
     Returns:
-        List of dicts with model name and average rank, sorted best to worst
+        List of dicts with model name and average rank, sorted best to worst.
     """
-    from collections import defaultdict
-
-    # Track positions for each model
     model_positions = defaultdict(list)
 
     for ranking in stage2_results:
-        ranking_text = ranking['ranking']
-
-        # Parse the ranking from the structured format
-        parsed_ranking = parse_ranking_from_text(ranking_text)
+        parsed_ranking = ranking.get('parsed_ranking') or parse_ranking_from_text(ranking['ranking'])
 
         for position, label in enumerate(parsed_ranking, start=1):
             if label in label_to_model:
                 model_name = label_to_model[label]
                 model_positions[model_name].append(position)
 
-    # Calculate average position for each model
     aggregate = []
     for model, positions in model_positions.items():
         if positions:
@@ -289,107 +210,46 @@ def calculate_aggregate_rankings(
                 "rankings_count": len(positions)
             })
 
-    # Sort by average rank (lower is better)
     aggregate.sort(key=lambda x: x['average_rank'])
-
     return aggregate
 
 
-async def generate_conversation_title(user_query: str) -> str:
-    """
-    Generate a short title for a conversation based on the first user message.
-
-    Args:
-        user_query: The first user message
-
-    Returns:
-        A short title (3-5 words)
-    """
-    title_prompt = (
-        "Generate a very short title (3-5 words maximum) that summarizes the following question.\n"
-        "The title should be concise and descriptive. Do not use quotes or punctuation.\n"
-        "IMPORTANT: You MUST generate the title in the same language as the question (e.g., if Tamil, write in Tamil; if Spanish, write in Spanish; if French, write in French, etc.).\n\n"
-        f"Question: {user_query}\n\n"
-        "Title:"
-    )
-
-    messages = [{"role": "user", "content": title_prompt}]
-
-    response = None
-    # 1. Try with moderator_MODEL first if available
-    if moderator_MODEL:
-        try:
-            response = await query_model(moderator_MODEL, messages, timeout=15.0)
-        except Exception as e:
-            print(f"Failed to query title with moderator model: {e}")
-
-    # 2. Try with any of the debate_MODELS
-    if response is None:
-        for model in debate_MODELS:
-            try:
-                response = await query_model(model, messages, timeout=10.0)
-                if response is not None:
-                    break
-            except Exception:
-                continue
-
-    # Parse and cleanup
-    title = ""
-    if response is not None:
-        title = response.get('content', '').strip()
-
-    title = title.strip('"\' \n\r\t')
-
-    # If no title could be generated, fall back to first few words of the user query
-    if not title or title.lower() == "new conversation":
-        words = [w for w in user_query.strip().split() if w]
-        if words:
-            title = " ".join(words[:4])
-            if len(words) > 4:
-                title += "..."
-        else:
-            title = "New Conversation"
-
-    # Truncate if too long
-    if len(title) > 50:
-        title = title[:47] + "..."
-
-    return title
-
+# ---------------------------------------------------------------------------
+# Round 3: revise or defend
+# ---------------------------------------------------------------------------
 
 async def stage3_revise_or_defend(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     label_to_model: Dict[str, str],
-    aggregate_rankings: List[Dict[str, Any]]
+    aggregate_rankings: List[Dict[str, Any]],
+    system_prompts: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Stage 3: Models see anonymized rankings and evaluations, and revise or defend their responses.
+    Round 3: Models see anonymized rankings and evaluations, and revise or defend
+    their responses. Each model keeps its persona system prompt.
     """
-    # Create the anonymized responses text from Stage 1
     labels = [chr(65 + i) for i in range(len(stage1_results))]
     responses_text = "\n\n".join([
         f"Response {label}:\n{result['response']}"
         for label, result in zip(labels, stage1_results)
     ])
 
-    # Format the peer evaluations
     reviews_formatted = ""
     for idx, r in enumerate(stage2_results):
         reviews_formatted += f"### Reviewer {idx+1} Evaluation:\n{r['ranking']}\n\n"
 
-    # Format the aggregate standings
+    model_to_label = {v: k for k, v in label_to_model.items()}
     standings_formatted = "\n".join([
-        f"- {next((k for k, v in label_to_model.items() if v == item['model']), item['model'])}: Average Rank {item['average_rank']} (over {item['rankings_count']} votes)"
+        f"- {model_to_label.get(item['model'], item['model'])}: Average Rank {item['average_rank']} (over {item['rankings_count']} votes)"
         for item in aggregate_rankings
     ])
 
-    # Generate prompts for all participating models
     prompts = {}
     for result in stage1_results:
         model = result['model']
-        model_label = next((k for k, v in label_to_model.items() if v == model), None)
+        model_label = model_to_label.get(model)
         if not model_label:
             continue
 
@@ -422,14 +282,17 @@ CRITICAL INSTRUCTIONS:
 3. You MUST write all your comments and response strictly in English.
 
 Your decision and response:"""
-        prompts[model] = [{"role": "user", "content": prompt}]
 
-    # Query all models in parallel
+        model_messages = [{"role": "user", "content": prompt}]
+        persona = (system_prompts or {}).get(model)
+        if persona:
+            model_messages = [{"role": "system", "content": persona}] + model_messages
+        prompts[model] = model_messages
+
     models_to_query = list(prompts.keys())
     responses = {}
     if models_to_query:
         tasks = [query_model(model, prompts[model]) for model in models_to_query]
-        import asyncio
         gathers = await asyncio.gather(*tasks, return_exceptions=True)
         for model, resp in zip(models_to_query, gathers):
             if isinstance(resp, Exception):
@@ -441,19 +304,19 @@ Your decision and response:"""
     stage3_results = []
     for model, response in responses.items():
         if response is not None:
-            full_text = response.get('content', '').strip()
-            # Parse decision
+            full_text = (response.get('content') or '').strip()
+            if not full_text:
+                continue
             decision = "REVISE"
             cleaned_content = full_text
             if "DECISION: DEFEND" in full_text:
                 decision = "DEFEND"
+            if "DECISION:" in full_text:
                 lines = full_text.split('\n')
-                cleaned_content = "\n".join([line for line in lines if "DECISION:" not in line]).strip()
-            elif "DECISION: REVISE" in full_text:
-                decision = "REVISE"
-                lines = full_text.split('\n')
-                cleaned_content = "\n".join([line for line in lines if "DECISION:" not in line]).strip()
-            
+                cleaned_content = "\n".join(
+                    line for line in lines if "DECISION:" not in line
+                ).strip()
+
             stage3_results.append({
                 "model": model,
                 "decision": decision,
@@ -463,33 +326,53 @@ Your decision and response:"""
     return stage3_results
 
 
+# ---------------------------------------------------------------------------
+# Round 4: challenger critique
+# ---------------------------------------------------------------------------
+
 async def stage4_challenger_critique(
     user_query: str,
     stage3_results: List[Dict[str, Any]],
-    aggregate_rankings: List[Dict[str, Any]]
+    aggregate_rankings: List[Dict[str, Any]],
+    preferred_challenger: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Stage 4: Assign one model as Challenger to find the weakest point in the leading answer.
+    Round 4: One model is assigned as Challenger to attack the leading answer.
+
+    Challenger selection: the council's Devil's Advocate when available (and not
+    itself the leader), otherwise the worst-ranked model.
     """
-    if not stage3_results or not aggregate_rankings:
+    if not stage3_results:
         return {
             "model": "Challenger Model",
             "response": "No models available to challenge."
         }
 
-    # Find the leading model (first in aggregate rankings)
-    leading_model_name = aggregate_rankings[0]['model']
+    # Leading model: best in aggregate rankings, falling back to first Round-3 result
+    if aggregate_rankings:
+        leading_model_name = aggregate_rankings[0]['model']
+    else:
+        leading_model_name = stage3_results[0]['model']
     leading_result = next((r for r in stage3_results if r['model'] == leading_model_name), stage3_results[0])
+    leading_model_name = leading_result['model']
     leading_response = leading_result['response']
 
-    # Select Challenger: worst model in aggregate rankings
-    # If only 1 model, it challenges itself. Otherwise, select the last model.
-    challenger_model_name = aggregate_rankings[-1]['model']
-    if challenger_model_name == leading_model_name and len(aggregate_rankings) > 1:
-        challenger_model_name = aggregate_rankings[-2]['model']
+    # Challenger: Devil's Advocate persona preferred, else worst-ranked model
+    stage3_models = [r['model'] for r in stage3_results]
+    challenger_model_name = None
+    if preferred_challenger and preferred_challenger in stage3_models and preferred_challenger != leading_model_name:
+        challenger_model_name = preferred_challenger
+    else:
+        ranked_worst_first = [item['model'] for item in reversed(aggregate_rankings)]
+        for candidate in ranked_worst_first:
+            if candidate in stage3_models and (candidate != leading_model_name or len(stage3_models) == 1):
+                challenger_model_name = candidate
+                break
+    if challenger_model_name is None:
+        challenger_model_name = stage3_models[-1]
 
-    challenger_prompt = f"""You are the assigned Challenger in an LLM Deliberation Council. 
-   
+    challenger_prompt = f"""You are the assigned Challenger in an LLM Deliberation Council.
+
 The council has been debating the following question:
 Question: {user_query}
 
@@ -509,12 +392,15 @@ CRITICAL: You MUST write your critique strictly in English.
 Your critique:"""
 
     messages = [{"role": "user", "content": challenger_prompt}]
-    
+
     try:
         response = await query_model(challenger_model_name, messages)
-        content = response.get('content', '').strip() if response else ""
+        content = (response.get('content') or '').strip() if response else ""
     except Exception as e:
         print(f"Challenger model {challenger_model_name} failed: {e}")
+        content = ""
+
+    if not content:
         content = f"Error: Challenger {challenger_model_name} failed to generate critique."
 
     return {
@@ -525,6 +411,10 @@ Your critique:"""
     }
 
 
+# ---------------------------------------------------------------------------
+# Round 5: chairman synthesis
+# ---------------------------------------------------------------------------
+
 async def stage5_chairman_synthesis(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
@@ -534,14 +424,16 @@ async def stage5_chairman_synthesis(
     label_to_model: Dict[str, str],
     aggregate_rankings: List[Dict[str, Any]],
     metacognition_summary: Optional[str] = None,
+    chairman_model: Optional[str] = None,
+    chairman_system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Stage 5: Chairman synthesizes the final response using the full deliberation history.
-    Also populates a structured DisagreementMap (consensus zones, disagreement zones,
-    confidence scores) for the DisagreementPanel UI component.
-    When metacognition_summary is provided it is injected as model confidence weights.
+    Round 5: Chairman synthesizes the final response using the full deliberation
+    history, and emits a structured DisagreementMap (consensus zones, disagreement
+    zones, confidence scores) for the DisagreementPanel UI component.
     """
-    # Compile the deliberation history array
+    chairman = chairman_model or moderator_MODEL
+
     deliberation_history = [
         {
             "round": 1,
@@ -581,10 +473,8 @@ async def stage5_chairman_synthesis(
         }
     ]
 
-    import json
     history_json = json.dumps(deliberation_history, indent=2)
 
-    # Narrative formatting for the model
     stage1_summary = "\n\n".join([
         f"- Model: {r['model']}\n  Response: {r['response']}"
         for r in stage1_results
@@ -600,7 +490,6 @@ async def stage5_chairman_synthesis(
         for r in stage3_results
     ])
 
-    # Build metacognition weight block for Chairman prompt
     if metacognition_summary:
         metacognition_block = (
             "PRE-DELIBERATION METACOGNITION SCORES (self-consistency across temperatures):\n"
@@ -652,35 +541,41 @@ CRITICAL: You MUST write your final synthesis response strictly in English.
 Provide your definitive final synthesized response followed by the JSON block:"""
 
     messages = [{"role": "user", "content": chairman_prompt}]
+    if chairman_system_prompt:
+        messages = [{"role": "system", "content": chairman_system_prompt}] + messages
 
+    content = ""
+    synthesizer = chairman
     try:
-        response = await query_model(moderator_MODEL, messages)
-        content = response.get('content', '').strip() if response else ""
+        response = await query_model(chairman, messages)
+        content = (response.get('content') or '').strip() if response else ""
     except Exception as e:
-        print(f"Chairman model {moderator_MODEL} failed: {e}")
-        content = ""
+        print(f"Chairman model {chairman} failed: {e}")
 
     if not content:
-        # Fallback if chairman fails - use fallback models
-        print(f"Chairman model {moderator_MODEL} failed or returned empty. Using fallback synthesis...")
+        # Fallback chain: any council/config model, then the leading Round-3 answer
+        print(f"Chairman model {chairman} failed or returned empty. Using fallback synthesis...")
         for model in debate_MODELS:
+            if model == chairman:
+                continue
             try:
                 fallback_response = await query_model(model, messages)
-                fallback_content = fallback_response.get('content', '').strip() if fallback_response else ""
-                if fallback_content:
-                    return {
-                        "model": model,
-                        "response": fallback_content
-                    }
+                content = (fallback_response.get('content') or '').strip() if fallback_response else ""
+                if content:
+                    synthesizer = model
+                    break
             except Exception as fe:
                 print(f"Fallback model {model} failed: {fe}")
                 continue
 
-        # Final fallback: use the leading answer from Round 3
+    if not content:
         leading_response = challenger_result.get('target_response', 'Error: Unable to synthesize final answer.')
         return {
             "model": "Fallback Synthesis (Leading Answer)",
-            "response": leading_response
+            "response": leading_response,
+            "disagreement_map": serialize_disagreement_map(
+                build_disagreement_map_heuristic(stage1_results, stage3_results, aggregate_rankings)
+            ),
         }
 
     # --- Parse / build the DisagreementMap ---
@@ -690,74 +585,227 @@ Provide your definitive final synthesized response followed by the JSON block:""
         dm = build_disagreement_map_heuristic(stage1_results, stage3_results, aggregate_rankings)
 
     # Strip the JSON fence from the narrative response so the UI gets clean text
-    import re as _re
-    clean_content = _re.sub(r'```(?:json)?\s*\{[\s\S]*?\}\s*```', '', content).strip()
+    clean_content = re.sub(r'```(?:json)?\s*\{[\s\S]*?\}\s*```', '', content).strip()
 
     return {
-        "model": moderator_MODEL,
+        "model": synthesizer,
         "response": clean_content,
         "disagreement_map": serialize_disagreement_map(dm),
     }
 
 
-async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
+# ---------------------------------------------------------------------------
+# Conversation title generation
+# ---------------------------------------------------------------------------
+
+async def generate_conversation_title(user_query: str) -> str:
     """
-    Run the complete 5-round debate process with metacognition pre-flight.
-
-    Returns:
-        Tuple of (stage1_results, stage2_results, stage5_result, metadata)
+    Generate a short title for a conversation based on the first user message.
     """
-    import asyncio as _asyncio
+    title_prompt = (
+        "Generate a very short title (3-5 words maximum) that summarizes the following question.\n"
+        "The title should be concise and descriptive. Do not use quotes or punctuation.\n"
+        "IMPORTANT: You MUST generate the title in the same language as the question (e.g., if Tamil, write in Tamil; if Spanish, write in Spanish; if French, write in French, etc.).\n\n"
+        f"Question: {user_query}\n\n"
+        "Title:"
+    )
 
-    # ── Pre-flight: metacognition + stage1 fire concurrently ──────────────
-    meta_task = _asyncio.create_task(run_metacognition(user_query))
-    stage1_task = _asyncio.create_task(stage1_collect_responses(user_query))
+    messages = [{"role": "user", "content": title_prompt}]
 
-    metacognition_result: MetacognitionResult = await meta_task
-    stage1_results: List[Dict[str, Any]] = await stage1_task
+    response = None
+    if moderator_MODEL:
+        try:
+            response = await query_model(moderator_MODEL, messages, timeout=15.0)
+        except Exception as e:
+            print(f"Failed to query title with moderator model: {e}")
 
-    # If no models responded successfully, return error
+    if response is None:
+        for model in debate_MODELS:
+            try:
+                response = await query_model(model, messages, timeout=10.0)
+                if response is not None:
+                    break
+            except Exception:
+                continue
+
+    title = ""
+    if response is not None:
+        title = (response.get('content') or '').strip()
+
+    title = title.strip('"\' \n\r\t')
+
+    if not title or title.lower() == "new conversation":
+        words = [w for w in user_query.strip().split() if w]
+        if words:
+            title = " ".join(words[:4])
+            if len(words) > 4:
+                title += "..."
+        else:
+            title = "New Conversation"
+
+    if len(title) > 50:
+        title = title[:47] + "..."
+
+    return title
+
+
+# ---------------------------------------------------------------------------
+# Unified orchestration: single async event stream for both endpoints
+# ---------------------------------------------------------------------------
+
+def _query_rotation_index(user_query: str) -> int:
+    """Stable per-query index so persona rotation is deterministic."""
+    return zlib.crc32(user_query.encode("utf-8"))
+
+
+async def run_debate_stream(user_query: str) -> AsyncIterator[Dict[str, Any]]:
+    """
+    Run the full deliberation, yielding an event dict per phase transition.
+
+    Event types:
+        routing_start / routing_complete
+        metacognition_start / metacognition_complete   (only when enabled)
+        round1_start / round1_complete
+        round2_start / round2_complete   (metadata: label_to_model, aggregate_rankings)
+        round3_start / round3_complete
+        round4_start / round4_complete
+        round5_start / round5_complete   (disagreement_map)
+        complete   (carries the full assembled `result` for persistence)
+        error
+
+    Both the SSE endpoint and run_full_debate() consume this generator, so the
+    round logic exists exactly once.
+    """
+    if not debate_MODELS:
+        yield {
+            "type": "error",
+            "message": "No models configured. Set OPENROUTER_API_KEY and/or GROQ_API_KEY in .env."
+        }
+        return
+
+    # ── Routing: classification, council selection, personas, cost ──────────
+    yield {"type": "routing_start"}
+
+    try:
+        routing = await route_query(user_query, debate_MODELS)
+    except Exception as e:
+        print(f"Routing failed, using full council: {e}")
+        from .router import QueryRouting, calculate_predicted_cost
+        routing = QueryRouting(
+            category="factual/research",
+            optimal_council=debate_MODELS[:4],
+            disagreement_panel_mandatory=True,
+            fact_checker_web_access=False,
+            estimated_cost_usd=calculate_predicted_cost(debate_MODELS[:4], moderator_MODEL),
+        )
+
+    council = routing.optimal_council or debate_MODELS[:4]
+    chairman_model = moderator_MODEL or council[0]
+    query_type = CATEGORY_TO_ROLE_TYPE.get(routing.category, "factual")
+
+    personas: RoleAssignment = allocate_personas(
+        council, chairman_model, query_type,
+        query_index=_query_rotation_index(user_query)
+    )
+    role_map = get_role_map(personas)
+
+    routing_data = {
+        **serialize_routing(routing),
+        "query_type": query_type,
+        "chairman": chairman_model,
+        "role_map": role_map,
+    }
+    yield {"type": "routing_complete", "data": routing_data}
+
+    # ── Optional metacognition pre-flight (concurrent with Round 1) ─────────
+    meta_task = None
+    if ENABLE_METACOGNITION:
+        yield {"type": "metacognition_start"}
+        meta_task = asyncio.create_task(run_metacognition(user_query, council))
+
+    # ── Round 1: initial answers ─────────────────────────────────────────────
+    yield {"type": "round1_start"}
+    stage1_results = await stage1_collect_responses(
+        user_query, council, personas.system_prompts
+    )
+
     if not stage1_results:
-        return [], [], {
-            "model": "error",
-            "response": "All models failed to respond. Please try again."
-        }, {}
+        if meta_task:
+            meta_task.cancel()
+        yield {
+            "type": "error",
+            "message": "All council models failed to respond. Please check API keys / rate limits and try again."
+        }
+        return
 
-    # Stage 2: Collect rankings
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    yield {"type": "round1_complete", "data": stage1_results}
 
-    # Calculate aggregate rankings
+    # ── Round 2: anonymized peer review ──────────────────────────────────────
+    yield {"type": "round2_start"}
+    stage2_results, label_to_model = await stage2_collect_rankings(
+        user_query, stage1_results, council, personas.system_prompts
+    )
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    yield {
+        "type": "round2_complete",
+        "data": stage2_results,
+        "metadata": {
+            "label_to_model": label_to_model,
+            "aggregate_rankings": aggregate_rankings,
+        }
+    }
 
-    # Stage 3: Revise or Defend
+    # Resolve metacognition now (it has had rounds 1-2 of wall time to finish)
+    metacognition_result: Optional[MetacognitionResult] = None
+    metacognition_serialized = None
+    if meta_task:
+        try:
+            metacognition_result = await meta_task
+            metacognition_serialized = serialize_metacognition_result(metacognition_result)
+            yield {"type": "metacognition_complete", "data": metacognition_serialized}
+        except Exception as e:
+            print(f"Metacognition failed: {e}")
+
+    # ── Round 3: revise or defend ─────────────────────────────────────────────
+    yield {"type": "round3_start"}
     stage3_results = await stage3_revise_or_defend(
-        user_query,
-        stage1_results,
-        stage2_results,
-        label_to_model,
-        aggregate_rankings
+        user_query, stage1_results, stage2_results,
+        label_to_model, aggregate_rankings, personas.system_prompts
     )
+    if not stage3_results:
+        # Degrade gracefully: reuse Round-1 answers as implicit defenses
+        stage3_results = [
+            {"model": r["model"], "decision": "DEFEND",
+             "response": r["response"], "raw_response": r["response"]}
+            for r in stage1_results
+        ]
+    yield {"type": "round3_complete", "data": stage3_results}
 
-    # Stage 4: Challenger Critique
+    # ── Round 4: challenger critique ─────────────────────────────────────────
+    yield {"type": "round4_start"}
     stage4_result = await stage4_challenger_critique(
-        user_query,
-        stage3_results,
-        aggregate_rankings
+        user_query, stage3_results, aggregate_rankings,
+        preferred_challenger=personas.devils_advocate or None,
     )
+    yield {"type": "round4_complete", "data": stage4_result}
 
-    # Stage 5: Chairman Synthesis (with metacognition weights)
+    # ── Round 5: chairman synthesis ──────────────────────────────────────────
+    yield {"type": "round5_start"}
     stage5_result = await stage5_chairman_synthesis(
-        user_query,
-        stage1_results,
-        stage2_results,
-        stage3_results,
-        stage4_result,
-        label_to_model,
-        aggregate_rankings,
-        metacognition_summary=metacognition_result.summary,
+        user_query, stage1_results, stage2_results, stage3_results,
+        stage4_result, label_to_model, aggregate_rankings,
+        metacognition_summary=metacognition_result.summary if metacognition_result else None,
+        chairman_model=chairman_model,
+        chairman_system_prompt=personas.chairman_prompt or None,
     )
+    disagreement_map = stage5_result.get("disagreement_map")
+    yield {
+        "type": "round5_complete",
+        "data": stage5_result,
+        "disagreement_map": disagreement_map,
+    }
 
-    # Compile the detailed rounds list
+    # ── Assemble the persistable result ──────────────────────────────────────
     rounds = [
         {"round": 1, "type": "initial_answers", "data": stage1_results},
         {"round": 2, "type": "peer_review", "data": stage2_results},
@@ -766,13 +814,47 @@ async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
         {"round": 5, "type": "chairman_synthesis", "data": stage5_result}
     ]
 
-    # Prepare metadata
     metadata = {
+        "routing": routing_data,
         "label_to_model": label_to_model,
         "aggregate_rankings": aggregate_rankings,
         "rounds": rounds,
-        "disagreement_map": stage5_result.get("disagreement_map"),
-        "metacognition": serialize_metacognition_result(metacognition_result),
+        "disagreement_map": disagreement_map,
+        "metacognition": metacognition_serialized,
     }
 
-    return stage1_results, stage2_results, stage5_result, metadata
+    yield {
+        "type": "complete",
+        "result": {
+            "stage1": stage1_results,
+            "stage2": stage2_results,
+            "stage3": stage5_result,
+            "rounds": rounds,
+            "metadata": metadata,
+        }
+    }
+
+
+async def run_full_debate(user_query: str) -> Tuple[List, List, Dict, Dict]:
+    """
+    Run the complete deliberation to completion (batch mode).
+
+    Returns:
+        Tuple of (stage1_results, stage2_results, stage5_result, metadata)
+    """
+    result = None
+    error_message = None
+
+    async for event in run_debate_stream(user_query):
+        if event["type"] == "complete":
+            result = event["result"]
+        elif event["type"] == "error":
+            error_message = event["message"]
+
+    if result is None:
+        return [], [], {
+            "model": "error",
+            "response": error_message or "Debate failed to produce a result."
+        }, {}
+
+    return result["stage1"], result["stage2"], result["stage3"], result["metadata"]

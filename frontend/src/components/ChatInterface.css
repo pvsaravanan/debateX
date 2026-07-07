@@ -154,6 +154,42 @@
   justify-content: flex-end;
 }
 
+/* Streaming phase indicators */
+.loading-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 10px 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.loading-stage::before {
+  content: '';
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent-cyan);
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50%      { opacity: 1;   transform: scale(1); }
+}
+
+.loading-global {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  padding: 8px 0;
+}
+
 /* Premium Error Panel */
 .error-panel {
   background-color: rgba(42, 27, 27, 0.4);

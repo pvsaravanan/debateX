@@ -35,7 +35,7 @@ const ChevronIcon = ({ isOpen }) => (
   </svg>
 );
 
-export default function Round4({ result, labelToModel }) {
+export default function Round4({ result, labelToModel, roleMap }) {
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
 
   if (!result) {
@@ -44,13 +44,16 @@ export default function Round4({ result, labelToModel }) {
 
   const challengerShort = (result.model.split('/').pop() || result.model).replace(/:free$/, '');
   const targetShort = result.target_model ? (result.target_model.split('/').pop() || result.target_model).replace(/:free$/, '') : 'Target Model';
+  const challengerIsAdvocate = roleMap?.[result.model] === "Devil's Advocate";
 
   return (
     <div className="stage round4">
       <h3 className="stage-title">Round 4: Challenger Critique</h3>
       <p className="stage-description">
-        The lowest-ranked model was assigned as the <strong>Challenger</strong>. 
-        Its sole objective is to aggressively stress-test and expose the weakest points or logical flaws in the leading model's answer.
+        {challengerIsAdvocate
+          ? <>The council's <strong>Devil's Advocate</strong> was assigned as the <strong>Challenger</strong>.</>
+          : <>The lowest-ranked model was assigned as the <strong>Challenger</strong>.</>}
+        {' '}Its sole objective is to aggressively stress-test and expose the weakest points or logical flaws in the leading model's answer.
       </p>
 
       <div className="critique-container">

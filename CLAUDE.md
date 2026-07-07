@@ -4,163 +4,127 @@ This file contains technical details, architectural decisions, and important imp
 
 ## Project Overview
 
-DebateX is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2, preventing models from playing favorites.
+DebateX is a self-hosted cognitive consensus engine: a routed, persona-driven 5-round deliberation across a council of diverse LLMs. Every query is classified and cost-estimated, the council receives adversarial personas, answers are peer-reviewed anonymously, the leading answer is attacked by a Challenger, and a Chairman synthesizes the final answer plus a structured disagreement map.
 
 ## Architecture
 
 ### Backend Structure (`backend/`)
 
 **`config.py`**
-- Contains `debate_MODELS` (list of OpenRouter model identifiers)
-- Contains `moderator_MODEL` (model that synthesizes final answer)
-- Uses environment variable `OPENROUTER_API_KEY` from `.env`
-- Backend runs on **port 8001** (NOT 8000 - user had another app on 8000)
+- `debate_MODELS` is built additively from whichever API keys exist in `.env` (`OPENROUTER_API_KEY`, `GROQ_API_KEY`). If both are set, both providers' models are registered and Groq's `llama-3.3-70b-versatile` wins `moderator_MODEL` (its block runs last).
+- `ENABLE_METACOGNITION` (env flag, default false) gates the pre-flight self-consistency probe. Off by default because it triples per-model call volume — a problem on free-tier rate limits.
+- Backend runs on **port 8001** (NOT 8000 - user had another app on 8000).
 
-**`openrouter.py`**
-- `query_model()`: Single async model query
-- `query_models_parallel()`: Parallel queries using `asyncio.gather()`
-- Returns dict with 'content' and optional 'reasoning_details'
-- Graceful degradation: returns None on failure, continues with successful responses
+**`llm.py`** — provider facade
+- `query_model()` dispatches on the `"groq/"` model-name prefix to `groq.py` (prefix stripped), otherwise to `openrouter.py`.
+- `query_models_parallel()` accepts an optional `system_prompts: Dict[model, prompt]` — this is how personas are injected. Failures map to `None` per model (graceful degradation choke point); rate-limit/credit errors are logged distinctly.
 
-**`debate.py`** - The Core Logic
-- `stage1_collect_responses()`: Parallel queries to all debate models
-- `stage2_collect_rankings()`:
-  - Anonymizes responses as "Response A, B, C, etc."
-  - Creates `label_to_model` mapping for de-anonymization
-  - Prompts models to evaluate and rank (with strict format requirements)
-  - Returns tuple: (rankings_list, label_to_model_dict)
-  - Each ranking includes both raw text and `parsed_ranking` list
-- `stage3_synthesize_final()`: moderator synthesizes from all responses + rankings
-- `parse_ranking_from_text()`: Extracts "FINAL RANKING:" section, handles both numbered lists and plain format
-- `calculate_aggregate_rankings()`: Computes average rank position across all peer evaluations
+**`http_client.py`**
+- Singleton pooled `httpx.AsyncClient` shared by both providers. Re-created if the current event loop differs from the one it was created on (successive `asyncio.run()` calls in tests/scripts would otherwise hit "Event loop is closed"). Closed via FastAPI lifespan hook in `main.py`.
+
+**`router.py`** — Query Classification & Cost Estimation
+- `route_query()`: LLM classification (small/fast model preferred) with `classify_query_local()` regex fallback → one of `technical/code`, `creative`, `factual/research`, `ethical/philosophical`, `math/logic`.
+- Council selection is **preference-ordered substring matching** per category (covers the configured models: nemotron, laguna, gemma, llama-3.3, llama-3.1, gpt-oss; plus forward-compat: qwen, deepseek, glm-4.5), capped at 4 models.
+- `calculate_predicted_cost()` projects full-debate USD cost from `PRICING_TABLE` using per-round token assumptions. Models ending `:free` always cost $0.
+- `CATEGORY_TO_ROLE_TYPE` bridges router categories to roles.py query types.
+
+**`roles.py`** — Dynamic Persona Allocation
+- `allocate_personas(council, chairman_model, query_type, query_index)` is the live entry point: council members get rotated adversarial personas (always ≥1 Reasoner, then Devil's Advocate, Fact-Checker, Steelmanner; extras become Reasoners); the chairman persona goes into `chairman_prompt` for Round 5 and does NOT consume a council seat.
+- Rotation is deterministic: `query_index = crc32(query)` (computed in debate.py), so the same query always gets the same allocation, but different queries rotate roles.
+- `allocate_roles()` is the older allocator where the chairman IS a council member — kept because `tests/test_roles.py` pins its behavior. Don't change its semantics.
+- `ROUND1_DIRECTIVE` is appended to council personas so every member still answers the question in Round 1 (a bare Devil's Advocate prompt would refuse to draft an answer).
+
+**`debate.py`** — The Single Orchestrator
+- `run_debate_stream(user_query)` is an **async generator** and the only implementation of the pipeline. Both endpoints consume it. Any round-logic change goes here, once.
+- Event protocol: `routing_start/complete` → (`metacognition_start/complete` if enabled) → `round1_start/complete` … `round5_start/complete` → `complete` (carries the full assembled `result` for persistence — main.py strips it before sending SSE) or `error`.
+- Round functions are parameterized (`council`, `system_prompts`, `chairman_model`, `preferred_challenger`) with `debate_MODELS`/`moderator_MODEL` defaults.
+- Round 4 challenger = Devil's Advocate persona if present and not the leader, else worst-ranked model.
+- Round 5 fallback chain: chairman → each config model → raw leading Round-3 answer; a disagreement map (parsed or heuristic) is always attached.
+- `parse_ranking_from_text()`: extracts "FINAL RANKING:" section, handles numbered and plain formats, **deduplicates labels** (first occurrence wins) so repeated mentions can't skew aggregates.
+- `run_full_debate()` just drains the generator (batch mode).
+
+**`disagreement.py`**
+- `CHAIRMAN_DISAGREEMENT_SCHEMA` is injected into the Round-5 prompt; `parse_disagreement_map()` extracts the fenced JSON block; `build_disagreement_map_heuristic()` (Jaccard token similarity over extracted claims, no LLM) is the fallback. The JSON fence is stripped from the narrative shown to users.
+
+**`metacognition.py`**
+- Samples each model 3× at temperatures 0.3/0.7/1.0, hand-rolled TF-IDF cosine similarity → confidence tier (HIGH ≥0.70 / MEDIUM ≥0.40 / LOW). Capped at 3 models, staggered within a model. Summary injected into the Chairman prompt as confidence weights. Only runs when `ENABLE_METACOGNITION=true`.
 
 **`storage.py`**
-- JSON-based conversation storage in `data/conversations/`
-- Each conversation: `{id, created_at, messages[]}`
-- Assistant messages contain: `{role, stage1, stage2, stage3}`
-- Note: metadata (label_to_model, aggregate_rankings) is NOT persisted to storage, only returned via API
+- JSON-per-conversation files in `data/conversations/`. Read-modify-write operations are serialized behind a process-wide `threading.Lock` — safe for one process; multiple uvicorn workers still need a real DB.
+- Assistant messages persist `{stage1, stage2, stage3, rounds[], metadata}`; metadata includes `routing`, `label_to_model`, `aggregate_rankings`, `disagreement_map`, `metacognition`.
 
 **`main.py`**
-- FastAPI app with CORS enabled for localhost:5173 and localhost:3000
-- POST `/api/conversations/{id}/message` returns metadata in addition to stages
-- Metadata includes: label_to_model mapping and aggregate_rankings
+- FastAPI with CORS for localhost:5173/3000; lifespan hook closes the pooled HTTP client.
+- `POST /api/conversations/{id}/message` (batch) and `POST /api/conversations/{id}/message/stream` (SSE) both consume `run_debate_stream()`. Title generation runs as a concurrent task, emitted as `title_complete`.
 
 ### Frontend Structure (`frontend/src/`)
 
 **`App.jsx`**
-- Main orchestration: manages conversations list and current conversation
-- Handles message sending and metadata storage
-- Important: metadata is stored in the UI state for display but not persisted to backend JSON
+- Consumes the SSE protocol; progressively fills the assistant message (`routing`, `stage1`, `stage2`, `round3`, `round4`, `stage3`, `disagreement_map`, `metacognition`) with per-phase `loading` flags.
 
-**`components/ChatInterface.jsx`**
-- Multiline textarea (3 rows, resizable)
-- Enter to send, Shift+Enter for new line
-- User messages wrapped in markdown-content class for padding
+**`components/RoutingPanel.jsx`**
+- Renders classification category, council chips with persona badges, chairman, and estimated cost (green "FREE" for $0). Reads either the live `msg.routing` or persisted `msg.metadata.routing`.
 
-**`components/Stage1.jsx`**
-- Tab view of individual model responses
-- ReactMarkdown rendering with markdown-content wrapper
+**`components/Stage1.jsx` / `Stage2.jsx` / `Round3.jsx` / `Round4.jsx` / `Stage3.jsx`**
+- Tabbed per-model views titled Round 1–5. Stage2 de-anonymizes **client-side for display only** (models never see identities) and shows the "Extracted Ranking" for parse validation. Round3 shows REVISE/DEFEND badges. Round4 credits the Devil's Advocate when it is the challenger. Stage3 is the Chairman synthesis.
+- Component filenames (Stage1/Stage2/Stage3) predate the round renaming — the message state keys (`stage1/stage2/stage3`) match the persisted storage shape, so don't rename them casually.
 
-**`components/Stage2.jsx`**
-- **Critical Feature**: Tab view showing RAW evaluation text from each model
-- De-anonymization happens CLIENT-SIDE for display (models receive anonymous labels)
-- Shows "Extracted Ranking" below each evaluation so users can validate parsing
-- Aggregate rankings shown with average position and vote count
-- Explanatory text clarifies that boldface model names are for readability only
+**`components/DisagreementPanel.jsx` / `ConfidenceHeatmap.jsx`**
+- Consensus/disagreement zones with confidence bars; metacognition heatmap (renders only when the flag is enabled server-side).
 
-**`components/Stage3.jsx`**
-- Final synthesized answer from moderator
-- Green-tinted background (#f0fff0) to highlight conclusion
-
-**Styling (`*.css`)**
-- Light mode theme (not dark mode)
-- Primary color: #4a90e2 (blue)
-- Global markdown styling in `index.css` with `.markdown-content` class
-- 12px padding on all markdown content to prevent cluttered appearance
+**Styling**
+- Dark theme via CSS variables in `index.css` (`--bg-primary: #171717`, `--accent-blue: #67e8f9`). All ReactMarkdown output must be wrapped in `<div className="markdown-content">`.
 
 ## Key Design Decisions
 
-### Stage 2 Prompt Format
-The Stage 2 prompt is very specific to ensure parseable output:
-```
-1. Evaluate each response individually first
-2. Provide "FINAL RANKING:" header
-3. Numbered list format: "1. Response C", "2. Response A", etc.
-4. No additional text after ranking section
-```
+### One orchestrator, two endpoints
+The SSE and batch endpoints previously had divergent hand-rolled copies of the pipeline. `run_debate_stream()` is now the single source of truth; the `complete` event carries the assembled result so consumers never re-derive it.
 
-This strict format allows reliable parsing while still getting thoughtful evaluations.
+### Backward-compatible persistence
+Old conversations (pre-routing, pre-rounds) still render: `ChatInterface` falls back from top-level message fields to `msg.rounds[]` / `msg.metadata` lookups. Storage message shape (`stage1/stage2/stage3` keys) is intentionally unchanged.
 
 ### De-anonymization Strategy
-- Models receive: "Response A", "Response B", etc.
-- Backend creates mapping: `{"Response A": "openai/gpt-5.1", ...}`
-- Frontend displays model names in **bold** for readability
-- Users see explanation that original evaluation used anonymous labels
-- This prevents bias while maintaining transparency
+- Models receive: "Response A", "Response B", etc.; backend maps labels → models; frontend bolds real names for readability with an explanatory note. Prevents reputation bias while keeping transparency.
 
 ### Error Handling Philosophy
-- Continue with successful responses if some models fail (graceful degradation)
-- Never fail the entire request due to single model failure
-- Log errors but don't expose to user unless all models fail
-
-### UI/UX Transparency
-- All raw outputs are inspectable via tabs
-- Parsed rankings shown below raw text for validation
-- Users can verify system's interpretation of model outputs
-- This builds trust and allows debugging of edge cases
-
-## Important Implementation Details
-
-### Relative Imports
-All backend modules use relative imports (e.g., `from .config import ...`) not absolute imports. This is critical for Python's module system to work correctly when running as `python -m backend.main`.
-
-### Port Configuration
-- Backend: 8001 (changed from 8000 to avoid conflict)
-- Frontend: 5173 (Vite default)
-- Update both `backend/main.py` and `frontend/src/api.js` if changing
-
-### Markdown Rendering
-All ReactMarkdown components must be wrapped in `<div className="markdown-content">` for proper spacing. This class is defined globally in `index.css`.
-
-### Model Configuration
-Models are hardcoded in `backend/config.py`. moderator can be same or different from debate members. The current default is Gemini as moderator per user preference.
+- Continue with successful responses if some models fail; never fail the request on a single model failure. Round 3 degrades to Round-1 answers as implicit defenses; Round 5 walks a fallback chain ending at the leading answer.
+- Frontend error panel sniffs error strings for provider hints ("groq"/"gsk_", "free-models-per-day") to show remediation steps — a fragile string contract between backend error messages and UI; keep messages stable.
 
 ## Common Gotchas
 
-1. **Module Import Errors**: Always run backend as `python -m backend.main` from project root, not from backend directory
-2. **CORS Issues**: Frontend must match allowed origins in `main.py` CORS middleware
-3. **Ranking Parse Failures**: If models don't follow format, fallback regex extracts any "Response X" patterns in order
-4. **Missing Metadata**: Metadata is ephemeral (not persisted), only available in API responses
-
-## Future Enhancement Ideas
-
-- Configurable debate/moderator via UI instead of config file
-- Streaming responses instead of batch loading
-- Export conversations to markdown/PDF
-- Model performance analytics over time
-- Custom ranking criteria (not just accuracy/insight)
-- Support for reasoning models (o1, etc.) with special handling
+1. **Module Import Errors**: Always run backend as `python -m backend.main` from project root, not from backend directory (relative imports).
+2. **CORS Issues**: Frontend must match allowed origins in `main.py` CORS middleware; ports are 8001 (backend) / 5173 (frontend), update `frontend/src/api.js` if changing.
+3. **Ranking Parse Failures**: If models ignore the format, fallback regex extracts any "Response X" patterns in order (deduplicated).
+4. **`allocate_roles` vs `allocate_personas`**: the former is test-pinned legacy; the live pipeline uses the latter. New persona work goes in `allocate_personas`.
+5. **Router preferences are substring matches**: adding a model to `config.py` without a matching substring in `router.py` category preferences means it only joins councils via the fallback path. Add it to `PRICING_TABLE` too or cost estimates use the default rate (free-tier `:free` suffix is always $0).
+6. **SSE event names**: `routing_*`, `round1_*`–`round5_*`. Frontend switch in `App.jsx` must stay in lockstep with `run_debate_stream()`.
 
 ## Testing Notes
 
-Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to debate. The script tests both streaming and non-streaming modes.
+- `python -m unittest tests.test_roles tests.test_router` — pinned unit tests for role allocation and routing/cost (14 tests, no network required: LLM classification falls back to the local regex classifier on failure).
+- `tests/` also contains ad-hoc API scripts (`test_or.py`, `test_groq.py`, `test_stream_5rounds.py`, …) for live-provider smoke testing.
+- For pipeline changes, mock `backend.llm.query_openrouter` / `backend.llm.query_groq` and drain `run_debate_stream()` — asserts the whole event protocol without API spend.
 
 ## Data Flow Summary
 
 ```
 User Query
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Stage 1: Parallel queries ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ [individual responses]
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Stage 2: Anonymize ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Parallel ranking queries ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ [evaluations + parsed rankings]
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Aggregate Rankings Calculation ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ [sorted by avg position]
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Stage 3: moderator synthesis with full context
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Return: {stage1, stage2, stage3, metadata}
-    ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Å“
-Frontend: Display with tabs + validation UI
+    ↓
+Routing: route_query() → category, council (≤4), cost  +  allocate_personas() → role system prompts
+    ↓
+Round 1: council answers in parallel (persona lenses)
+    ↓
+Round 2: anonymize → parallel peer rankings → parse → aggregate rankings
+    ↓
+Round 3: each model REVISEs or DEFENDs under peer feedback
+    ↓
+Round 4: Devil's Advocate (or worst-ranked) attacks the leading answer
+    ↓
+Round 5: Chairman (moderator + chairman persona) synthesizes + disagreement map
+    ↓
+Return/persist: {stage1, stage2, stage3, rounds[], metadata{routing, rankings, disagreement_map, metacognition}}
+    ↓
+Frontend: RoutingPanel + Round 1–5 tabs + DisagreementPanel (+ ConfidenceHeatmap when enabled)
 ```
 
-The entire flow is async/parallel where possible to minimize latency.
+Parallelism is *within* rounds (asyncio.gather across the council); rounds themselves are sequential.

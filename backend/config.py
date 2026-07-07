@@ -35,5 +35,10 @@ if GROQ_API_KEY:
     # Prioritize Groq's high-performance model as the moderator
     moderator_MODEL = "groq/llama-3.3-70b-versatile"
 
+# Metacognition pre-flight probing (3 temperature samples per model) multiplies
+# API call volume; disabled by default to stay inside free-tier rate limits.
+# Set ENABLE_METACOGNITION=true in .env to re-enable.
+ENABLE_METACOGNITION = os.getenv("ENABLE_METACOGNITION", "false").strip().lower() == "true"
+
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"

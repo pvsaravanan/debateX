@@ -6,7 +6,7 @@ import './DisagreementPanel.css';
 function shortName(model) {
   if (!model) return '?';
   const parts = model.split('/');
-  return parts[parts.length - 1] || model;
+  return (parts[parts.length - 1] || model).replace(/:free$/, '');
 }
 
 function stanceColor(stance) {
@@ -133,14 +133,16 @@ export default function DisagreementPanel({ disagreementMap }) {
   if (!hasContent) return null;
 
   return (
-    <div className="dp-panel">
-      {/* Header */}
-      <div className="dp-header">
-        <div className="dp-header-left">
-          <span className="dp-icon">⚖</span>
-          <h3 className="dp-title">Disagreement Analysis</h3>
-        </div>
-        <div className="dp-header-right">
+    <div className="stage disagreement-stage">
+      <h3 className="stage-title">Disagreement Analysis</h3>
+      <p className="stage-description">
+        Where the council converged and where it split — with each model's position
+        and confidence on every contested claim.
+      </p>
+
+      <div className="dp-card">
+        {/* Header row: consensus score + human-review flag */}
+        <div className="dp-header">
           {pct != null && (
             <div className="dp-consensus-score">
               <span className="dp-consensus-score-label">Council consensus</span>
@@ -153,27 +155,30 @@ export default function DisagreementPanel({ disagreementMap }) {
               <span className="dp-consensus-score-pct">{pct}%</span>
             </div>
           )}
+          <span className="dp-zone-count">
+            {consensus_points.length} agreed · {disagreement_zones.length} diverged
+          </span>
           {requires_human_review && (
             <span className="dp-human-flag">🧑 Human review recommended</span>
           )}
         </div>
+
+        {/* Consensus zone */}
+        <ConsensusZone points={consensus_points} />
+
+        {/* Disagreement zones */}
+        {disagreement_zones.length > 0 && (
+          <div className="dp-section">
+            <h4 className="dp-section-title">
+              <span className="dp-zone-badge badge--disagree">⚡ DIVERGED</span>
+              {disagreement_zones.length} contested point{disagreement_zones.length !== 1 ? 's' : ''} — click to inspect
+            </h4>
+            {disagreement_zones.map((zone, i) => (
+              <DisagreementZone key={i} zone={zone} index={i} />
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Consensus zone */}
-      <ConsensusZone points={consensus_points} />
-
-      {/* Disagreement zones */}
-      {disagreement_zones.length > 0 && (
-        <div className="dp-section">
-          <h4 className="dp-section-title">
-            <span className="dp-zone-badge badge--disagree">⚡ DISAGREEMENTS</span>
-            {disagreement_zones.length} divergent point{disagreement_zones.length !== 1 ? 's' : ''} detected
-          </h4>
-          {disagreement_zones.map((zone, i) => (
-            <DisagreementZone key={i} zone={zone} index={i} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Stage2 from './Stage2';
 import Round3 from './Round3';
 import Round4 from './Round4';
 import Stage3 from './Stage3';
+import RoutingPanel from './RoutingPanel';
 import DisagreementPanel from './DisagreementPanel';
 import ConfidenceHeatmap from './ConfidenceHeatmap';
 import './ChatInterface.css';
@@ -70,8 +71,11 @@ export default function ChatInterface({
         ) : (
           <div className="messages-container">
             {conversation.messages.map((msg, index) => {
+              const routing = msg.routing || msg.metadata?.routing;
               const round3 = msg.round3 || (msg.rounds?.find(r => r.type === 'revise_or_defend')?.data);
               const round4 = msg.round4 || (msg.rounds?.find(r => r.type === 'challenger')?.data);
+              const disagreementMap = msg.disagreement_map || msg.metadata?.disagreement_map;
+              const metacognition = msg.metacognition || msg.metadata?.metacognition;
               return (
                 <div key={index} className={`message-group ${msg.role}`}>
                   <div className="message-content">
@@ -79,13 +83,16 @@ export default function ChatInterface({
                       <div className="user-bubble">{msg.content}</div>
                     ) : (
                       <div className="assistant-stages">
-                        {msg.loading?.metacognition && <div className="loading-stage">Pre-flight: probing model self-consistency...</div>}
-                        {msg.metacognition && <ConfidenceHeatmap data={msg.metacognition} />}
+                        {msg.loading?.routing && <div className="loading-stage">Routing: classifying query and assembling the council...</div>}
+                        {routing && <RoutingPanel routing={routing} />}
 
-                        {msg.loading?.stage1 && <div className="loading-stage">Round 1: Gathering initial answers...</div>}
-                        {msg.stage1 && <Stage1 responses={msg.stage1} />}
-                        
-                        {msg.loading?.stage2 && <div className="loading-stage">Round 2: Evaluating and ranking answers...</div>}
+                        {msg.loading?.metacognition && <div className="loading-stage">Pre-flight: probing model self-consistency...</div>}
+                        {metacognition && <ConfidenceHeatmap data={metacognition} />}
+
+                        {msg.loading?.round1 && <div className="loading-stage">Round 1: Council drafting initial answers...</div>}
+                        {msg.stage1 && <Stage1 responses={msg.stage1} roleMap={routing?.role_map} />}
+
+                        {msg.loading?.round2 && <div className="loading-stage">Round 2: Anonymized peer review and ranking...</div>}
                         {msg.stage2 && (
                           <Stage2
                             rankings={msg.stage2}
@@ -93,18 +100,18 @@ export default function ChatInterface({
                             aggregateRankings={msg.metadata?.aggregate_rankings}
                           />
                         )}
-                        
+
                         {msg.loading?.round3 && <div className="loading-stage">Round 3: Models revising or defending their answers...</div>}
                         {round3 && <Round3 results={round3} />}
-                        
+
                         {msg.loading?.round4 && <div className="loading-stage">Round 4: Challenger identifying weak points...</div>}
-                        {round4 && <Round4 result={round4} labelToModel={msg.metadata?.label_to_model} />}
+                        {round4 && <Round4 result={round4} labelToModel={msg.metadata?.label_to_model} roleMap={routing?.role_map} />}
 
                         {msg.loading?.round5 && <div className="loading-stage">Round 5: Chairman synthesizing final answer...</div>}
                         {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
 
-                        {msg.disagreement_map && (
-                          <DisagreementPanel disagreementMap={msg.disagreement_map} />
+                        {disagreementMap && (
+                          <DisagreementPanel disagreementMap={disagreementMap} />
                         )}
 
                         {msg.error && (

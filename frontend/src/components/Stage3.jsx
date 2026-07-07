@@ -9,10 +9,10 @@ export default function Stage3({ finalResponse }) {
 
   return (
     <div className="stage stage3">
-      <h3 className="stage-title">Stage 3: Final debate Answer</h3>
+      <h3 className="stage-title">Round 5: Chairman Synthesis</h3>
       <div className="final-response">
         <div className="moderator-label">
-          moderator: {(finalResponse.model.split('/').pop() || finalResponse.model).replace(/:free$/, '')}
+          Chairman: {(finalResponse.model.split('/').pop() || finalResponse.model).replace(/:free$/, '')}
         </div>
         <div className="final-text markdown-content">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{finalResponse.response}</ReactMarkdown>
